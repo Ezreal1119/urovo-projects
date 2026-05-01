@@ -1,0 +1,884 @@
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  EVENT_ROLES,
+  EventRole,
+  PRIORITIES,
+  ProjectInfo,
+  ProjectListItem,
+  STATUSES,
+  Ticket,
+  TicketPriority,
+  TicketStatus,
+  TimelineEvent,
+} from "@/lib/types";
+
+type TicketDraft = {
+  title: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  summary: string;
+  next_action: string;
+};
+
+type EventDraft = {
+  time: string;
+  role: EventRole;
+  content: string;
+};
+
+const emptyTicketDraft: TicketDraft = {
+  title: "",
+  status: "open",
+  priority: "medium",
+  summary: "",
+  next_action: "",
+};
+
+const emptyEventDraft: EventDraft = {
+  time: "",
+  role: "support",
+  content: "",
+};
+
+const statusLabels: Record<TicketStatus, string> = {
+  open: "Open",
+  in_progress: "In progress",
+  pending_customer: "Pending customer",
+  pending_internal: "Pending internal",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
+const priorityLabels: Record<TicketPriority, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  urgent: "Urgent",
+};
+
+const eventRoleLabels: Record<EventRole, string> = {
+  customer: "Customer",
+  support: "Support",
+  internal: "Internal",
+  system: "System",
+};
+
+export default function ProjectsWorkspace() {
+  const [projects, setProjects] = useState<ProjectListItem[]>([]);
+  const [selectedFolder, setSelectedFolder] = useState("");
+  const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState("");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [showNewTicket, setShowNewTicket] = useState(false);
+
+  const selectedTicket = tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
+
+  const filteredProjects = useMemo(() => {
+    const query = projectQuery.trim().toLowerCase();
+    if (!query) {
+      return projects;
+    }
+    return projects.filter(({ folder, project }) =>
+      [folder, project.project_name, project.customer, project.country]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [projects, projectQuery]);
+
+  const filteredTickets = useMemo(() => {
+    const query = globalQuery.trim().toLowerCase();
+    if (!query) {
+      return tickets;
+    }
+    return tickets.filter((ticket) =>
+      [ticket.id, ticket.title, ticket.summary, ticket.next_action, ticket.status, ticket.priority]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [tickets, globalQuery]);
+
+  const metrics = useMemo(() => {
+    return {
+      total: tickets.length,
+      open: tickets.filter((ticket) => !["resolved", "closed"].includes(ticket.status)).length,
+      elevated: tickets.filter((ticket) => ["high", "urgent"].includes(ticket.priority)).length,
+      pendingCustomer: tickets.filter((ticket) => ticket.status === "pending_customer").length,
+    };
+  }, [tickets]);
+
+  async function loadProject(folder: string) {
+    setSelectedFolder(folder);
+    setSelectedTicketId("");
+    setError("");
+    try {
+      const data = await api<{ project: ProjectInfo; tickets: Ticket[] }>(`${projectApiPath(folder)}/tickets`);
+      setSelectedProject(data.project);
+      setTickets(data.tickets);
+    } catch (requestError) {
+      setError((requestError as Error).message);
+      setSelectedProject(null);
+      setTickets([]);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInitialProjects() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await api<{ projects: ProjectListItem[] }>("/api/projects");
+        if (cancelled) {
+          return;
+        }
+        setProjects(data.projects);
+        if (data.projects.length > 0) {
+          const firstFolder = data.projects[0].folder;
+          setSelectedFolder(firstFolder);
+          const projectData = await api<{ project: ProjectInfo; tickets: Ticket[] }>(
+            `${projectApiPath(firstFolder)}/tickets`,
+          );
+          if (!cancelled) {
+            setSelectedProject(projectData.project);
+            setTickets(projectData.tickets);
+          }
+        }
+      } catch (requestError) {
+        if (!cancelled) {
+          setError((requestError as Error).message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadInitialProjects();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function createTicket(draft: TicketDraft) {
+    if (!selectedFolder) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await api<{ ticket: Ticket }>(`${projectApiPath(selectedFolder)}/tickets`, {
+        method: "POST",
+        body: JSON.stringify(draft),
+      });
+      setTickets((current) => [data.ticket, ...current]);
+      setSelectedTicketId(data.ticket.id);
+      setShowNewTicket(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateTicket(ticketId: string, draft: TicketDraft) {
+    setSaving(true);
+    try {
+      const data = await api<{ ticket: Ticket }>(`${projectApiPath(selectedFolder)}/tickets/${ticketId}`, {
+        method: "PUT",
+        body: JSON.stringify(draft),
+      });
+      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTicket(ticketId: string) {
+    if (!confirm("Delete this ticket? This writes directly to tickets.json.")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await api(`${projectApiPath(selectedFolder)}/tickets/${ticketId}`, { method: "DELETE" });
+      setTickets((current) => current.filter((ticket) => ticket.id !== ticketId));
+      setSelectedTicketId("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addEvent(ticketId: string, draft: EventDraft) {
+    setSaving(true);
+    try {
+      const data = await api<{ ticket: Ticket }>(
+        `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events`,
+        {
+          method: "POST",
+          body: JSON.stringify(draft),
+        },
+      );
+      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateEvent(ticketId: string, index: number, draft: EventDraft) {
+    setSaving(true);
+    try {
+      const data = await api<{ ticket: Ticket }>(
+        `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events/${index}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(draft),
+        },
+      );
+      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteEvent(ticketId: string, index: number) {
+    setSaving(true);
+    try {
+      const data = await api<{ ticket: Ticket }>(
+        `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events/${index}`,
+        { method: "DELETE" },
+      );
+      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
+      <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="grid h-9 w-9 place-items-center rounded-lg bg-slate-950 text-sm font-semibold text-white">
+            UP
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">Urovo Projects</div>
+            <div className="truncate text-xs text-slate-500">
+              {selectedProject?.project_name ?? "No project selected"}
+            </div>
+          </div>
+        </div>
+        <label className="relative hidden w-full max-w-md md:block">
+          <span className="sr-only">Search tickets</span>
+          <input
+            value={globalQuery}
+            onChange={(event) => setGlobalQuery(event.target.value)}
+            className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+            placeholder="Search tickets"
+          />
+        </label>
+        <button
+          onClick={() => setShowNewTicket(true)}
+          disabled={!selectedFolder}
+          className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          New Ticket
+        </button>
+      </header>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="border-b border-slate-200 bg-white p-4 lg:border-b-0 lg:border-r">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Projects</h2>
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-500">{projects.length}</span>
+          </div>
+          <input
+            value={projectQuery}
+            onChange={(event) => setProjectQuery(event.target.value)}
+            className="mb-3 h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+            placeholder="Filter projects"
+          />
+          <div className="space-y-1">
+            {filteredProjects.map(({ folder, project }) => (
+              <button
+                key={folder}
+                onClick={() => void loadProject(folder)}
+                className={`w-full rounded-lg border px-3 py-3 text-left transition ${
+                  folder === selectedFolder
+                    ? "border-slate-300 bg-slate-100 shadow-sm"
+                    : "border-transparent hover:border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="truncate text-sm font-medium">{project.project_name}</div>
+                <div className="mt-1 truncate text-xs text-slate-500">{folder}</div>
+              </button>
+            ))}
+            {!loading && filteredProjects.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                No `proj_` folders found.
+              </div>
+            ) : null}
+          </div>
+        </aside>
+
+        <main className="min-w-0 p-4 lg:p-6">
+          {error ? (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+
+          {selectedProject ? (
+            <>
+              <ProjectHeader project={selectedProject} />
+              <section className="mt-5 grid gap-3 md:grid-cols-4">
+                <Metric label="Total tickets" value={metrics.total} />
+                <Metric label="Open tickets" value={metrics.open} />
+                <Metric label="High / urgent" value={metrics.elevated} />
+                <Metric label="Pending customer" value={metrics.pendingCustomer} />
+              </section>
+
+              <section className="mt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-slate-900">Ticket Dashboard</h2>
+                  <span className="text-xs text-slate-500">{filteredTickets.length} shown</span>
+                </div>
+                <div className="grid gap-3 xl:grid-cols-2">
+                  {filteredTickets.map((ticket) => (
+                    <TicketCard
+                      key={ticket.id}
+                      ticket={ticket}
+                      active={ticket.id === selectedTicketId}
+                      onClick={() => setSelectedTicketId(ticket.id)}
+                    />
+                  ))}
+                </div>
+                {filteredTickets.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
+                    <div className="text-sm font-medium text-slate-900">No tickets to show</div>
+                    <p className="mt-1 text-sm text-slate-500">Create a ticket or adjust the search filter.</p>
+                  </div>
+                ) : null}
+              </section>
+            </>
+          ) : (
+            <div className="grid min-h-[60vh] place-items-center rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
+              <div>
+                <h1 className="text-lg font-semibold">Select a project</h1>
+                <p className="mt-2 max-w-md text-sm text-slate-500">
+                  The sidebar reads country folders from `PROJECTS_ROOT` and lists one layer of `proj_` project
+                  folders inside them.
+                </p>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {selectedTicket ? (
+        <TicketDrawer
+          ticket={selectedTicket}
+          saving={saving}
+          onClose={() => setSelectedTicketId("")}
+          onSave={(draft) => void updateTicket(selectedTicket.id, draft)}
+          onDelete={() => void deleteTicket(selectedTicket.id)}
+          onAddEvent={(draft) => void addEvent(selectedTicket.id, draft)}
+          onUpdateEvent={(index, draft) => void updateEvent(selectedTicket.id, index, draft)}
+          onDeleteEvent={(index) => void deleteEvent(selectedTicket.id, index)}
+        />
+      ) : null}
+
+      {showNewTicket ? (
+        <TicketModal
+          saving={saving}
+          onClose={() => setShowNewTicket(false)}
+          onCreate={(draft) => void createTicket(draft)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectHeader({ project }: { project: ProjectInfo }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
+            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+              {project.status || "active"}
+            </span>
+          </div>
+          <p className="max-w-3xl text-sm leading-6 text-slate-600">{project.description || "No description."}</p>
+        </div>
+        <dl className="grid min-w-64 grid-cols-2 gap-3 text-sm">
+          <Info label="Country" value={project.country || "-"} />
+          <Info label="Customer" value={project.customer || "-"} />
+          <Info label="Project ID" value={project.project_id || "-"} />
+          <Info label="Updated" value={formatDate(project.updated_at)} />
+        </dl>
+      </div>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-2xl font-semibold">{value}</div>
+      <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-1 truncate font-medium text-slate-900">{value}</dd>
+    </div>
+  );
+}
+
+function TicketCard({ ticket, active, onClick }: { ticket: Ticket; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+        active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-slate-500">{ticket.id}</div>
+          <h3 className="mt-1 line-clamp-2 text-base font-semibold text-slate-950">{ticket.title}</h3>
+        </div>
+        <div className="flex shrink-0 flex-col gap-1">
+          <StatusBadge status={ticket.status} />
+          <PriorityBadge priority={ticket.priority} />
+        </div>
+      </div>
+      <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{ticket.summary || "No summary."}</p>
+      <div className="mt-4 rounded-lg bg-slate-50 p-3">
+        <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Next action</div>
+        <p className="mt-1 line-clamp-2 text-sm text-slate-700">{ticket.next_action || "No next action."}</p>
+      </div>
+      <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+        <span>Updated {formatDateTime(ticket.updated_at)}</span>
+        <span>{ticket.events.length} events</span>
+      </div>
+    </button>
+  );
+}
+
+function TicketModal({
+  saving,
+  onClose,
+  onCreate,
+}: {
+  saving: boolean;
+  onClose: () => void;
+  onCreate: (draft: TicketDraft) => void;
+}) {
+  return (
+    <Overlay>
+      <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">New Ticket</h2>
+          <button onClick={onClose} className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
+            Close
+          </button>
+        </div>
+        <TicketForm initial={emptyTicketDraft} saving={saving} submitLabel="Create ticket" onSubmit={onCreate} />
+      </div>
+    </Overlay>
+  );
+}
+
+function TicketDrawer({
+  ticket,
+  saving,
+  onClose,
+  onSave,
+  onDelete,
+  onAddEvent,
+  onUpdateEvent,
+  onDeleteEvent,
+}: {
+  ticket: Ticket;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (draft: TicketDraft) => void;
+  onDelete: () => void;
+  onAddEvent: (draft: EventDraft) => void;
+  onUpdateEvent: (index: number, draft: EventDraft) => void;
+  onDeleteEvent: (index: number) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-30 flex justify-end bg-slate-950/20">
+      <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white p-5">
+          <div>
+            <div className="text-xs font-medium text-slate-500">{ticket.id}</div>
+            <h2 className="mt-1 text-xl font-semibold">{ticket.title}</h2>
+          </div>
+          <button onClick={onClose} className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
+            Close
+          </button>
+        </div>
+
+        <div className="space-y-6 p-5">
+          <TicketForm
+            key={ticket.id}
+            initial={ticketToDraft(ticket)}
+            saving={saving}
+            submitLabel="Save changes"
+            onSubmit={onSave}
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={onDelete}
+              disabled={saving}
+              className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+            >
+              Delete ticket
+            </button>
+          </div>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Timeline</h3>
+              <span className="text-xs text-slate-500">Chronological</span>
+            </div>
+            <div className="space-y-3">
+              {ticket.events.map((event, index) => (
+                <TimelineItem
+                  key={`${event.time}-${index}`}
+                  event={event}
+                  index={index}
+                  saving={saving}
+                  onUpdate={(draft) => onUpdateEvent(index, draft)}
+                  onDelete={() => onDeleteEvent(index)}
+                />
+              ))}
+            </div>
+            {ticket.events.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                No timeline events yet.
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h3 className="mb-3 text-sm font-semibold">Add timeline event</h3>
+            <EventForm saving={saving} submitLabel="Add event" onSubmit={onAddEvent} />
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function TicketForm({
+  initial,
+  saving,
+  submitLabel,
+  onSubmit,
+}: {
+  initial: TicketDraft;
+  saving: boolean;
+  submitLabel: string;
+  onSubmit: (draft: TicketDraft) => void;
+}) {
+  const [draft, setDraft] = useState<TicketDraft>(initial);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSubmit(draft);
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Title">
+        <input
+          required
+          value={draft.title}
+          onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+          className="form-input"
+          placeholder="Describe the issue"
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Status">
+          <select
+            value={draft.status}
+            onChange={(event) => setDraft({ ...draft, status: event.target.value as TicketStatus })}
+            className="form-input"
+          >
+            {STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {statusLabels[status]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Priority">
+          <select
+            value={draft.priority}
+            onChange={(event) => setDraft({ ...draft, priority: event.target.value as TicketPriority })}
+            className="form-input"
+          >
+            {PRIORITIES.map((priority) => (
+              <option key={priority} value={priority}>
+                {priorityLabels[priority]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <Field label="Summary">
+        <textarea
+          value={draft.summary}
+          onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
+          className="form-input min-h-28 resize-y"
+          placeholder="Current issue context and investigation notes"
+        />
+      </Field>
+      <Field label="Next action">
+        <textarea
+          value={draft.next_action}
+          onChange={(event) => setDraft({ ...draft, next_action: event.target.value })}
+          className="form-input min-h-20 resize-y"
+          placeholder="Owner, expected response, or next technical step"
+        />
+      </Field>
+      <button
+        disabled={saving}
+        className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+      >
+        {saving ? "Saving..." : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function TimelineItem({
+  event,
+  index,
+  saving,
+  onUpdate,
+  onDelete,
+}: {
+  event: TimelineEvent;
+  index: number;
+  saving: boolean;
+  onUpdate: (draft: EventDraft) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div className="relative rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+              {eventRoleLabels[event.role]}
+            </span>
+            <span className="text-xs text-slate-500">{formatDateTime(event.time)}</span>
+          </div>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{event.content || "-"}</p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button onClick={() => setEditing(!editing)} className="rounded-md px-2 py-1 text-xs hover:bg-slate-100">
+            Edit
+          </button>
+          <button onClick={onDelete} className="rounded-md px-2 py-1 text-xs text-red-700 hover:bg-red-50">
+            Delete
+          </button>
+        </div>
+      </div>
+      {editing ? (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <EventForm
+            key={`${event.time}-${event.role}-${index}`}
+            initial={eventToDraft(event)}
+            saving={saving}
+            submitLabel="Save event"
+            onSubmit={(draft) => {
+              onUpdate(draft);
+              setEditing(false);
+            }}
+          />
+        </div>
+      ) : null}
+      <div className="mt-2 text-[11px] text-slate-400">Event index {index}</div>
+    </div>
+  );
+}
+
+function EventForm({
+  initial = emptyEventDraft,
+  saving,
+  submitLabel,
+  onSubmit,
+}: {
+  initial?: EventDraft;
+  saving: boolean;
+  submitLabel: string;
+  onSubmit: (draft: EventDraft) => void;
+}) {
+  const [draft, setDraft] = useState<EventDraft>(initial);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSubmit(draft);
+    if (!initial.content) {
+      setDraft(emptyEventDraft);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Time">
+          <input
+            value={draft.time}
+            onChange={(event) => setDraft({ ...draft, time: event.target.value })}
+            className="form-input"
+            placeholder="2026-05-01T10:20:00"
+          />
+        </Field>
+        <Field label="Role">
+          <select
+            value={draft.role}
+            onChange={(event) => setDraft({ ...draft, role: event.target.value as EventRole })}
+            className="form-input"
+          >
+            {EVENT_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {eventRoleLabels[role]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <Field label="Content">
+        <textarea
+          required
+          value={draft.content}
+          onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+          className="form-input min-h-20 resize-y"
+          placeholder="Add the customer update, support response, or internal note"
+        />
+      </Field>
+      <button
+        disabled={saving}
+        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
+      >
+        {saving ? "Saving..." : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function StatusBadge({ status }: { status: TicketStatus }) {
+  const styles: Record<TicketStatus, string> = {
+    open: "bg-sky-50 text-sky-700",
+    in_progress: "bg-violet-50 text-violet-700",
+    pending_customer: "bg-amber-50 text-amber-800",
+    pending_internal: "bg-orange-50 text-orange-800",
+    resolved: "bg-emerald-50 text-emerald-700",
+    closed: "bg-slate-100 text-slate-600",
+  };
+  return <span className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}>{statusLabels[status]}</span>;
+}
+
+function PriorityBadge({ priority }: { priority: TicketPriority }) {
+  const styles: Record<TicketPriority, string> = {
+    low: "bg-slate-100 text-slate-600",
+    medium: "bg-blue-50 text-blue-700",
+    high: "bg-rose-50 text-rose-700",
+    urgent: "bg-red-600 text-white",
+  };
+  return (
+    <span className={`rounded-md px-2 py-1 text-xs font-medium ${styles[priority]}`}>
+      {priorityLabels[priority]}
+    </span>
+  );
+}
+
+function Overlay({ children }: { children: React.ReactNode }) {
+  return <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/30 p-4">{children}</div>;
+}
+
+function projectApiPath(key: string) {
+  return `/api/projects/${key.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+async function api<T = unknown>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Request failed.");
+  }
+  return data as T;
+}
+
+function ticketToDraft(ticket: Ticket): TicketDraft {
+  return {
+    title: ticket.title,
+    status: ticket.status,
+    priority: ticket.priority,
+    summary: ticket.summary,
+    next_action: ticket.next_action,
+  };
+}
+
+function eventToDraft(event: TimelineEvent): EventDraft {
+  return {
+    time: event.time,
+    role: event.role,
+    content: event.content,
+  };
+}
+
+function formatDate(value: string) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function formatDateTime(value: string) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
