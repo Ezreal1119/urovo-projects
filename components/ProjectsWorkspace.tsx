@@ -307,18 +307,18 @@ export default function ProjectsWorkspace() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
-      <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
+      <header className="sticky top-0 z-20 flex h-20 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Image
             src="/patrick.png"
             alt="Urovo Projects"
-            width={36}
-            height={36}
-            className="h-9 w-9 rounded-lg object-cover"
+            width={44}
+            height={44}
+            className="h-11 w-11 rounded-xl object-cover"
             priority
           />
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-slate-950">Urovo Projects</div>
+            <div className="text-lg font-semibold tracking-tight text-slate-950">Urovo Projects</div>
           </div>
         </div>
         <label className="relative hidden w-full max-w-md md:block">
@@ -456,22 +456,15 @@ export default function ProjectsWorkspace() {
 function ProjectHeader({ project }: { project: ProjectInfo }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
-            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-              {project.status || "active"}
-            </span>
-          </div>
-          <p className="max-w-3xl text-sm leading-6 text-slate-600">{project.description || "No description."}</p>
+      <div>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
+          <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+            {project.status || "active"}
+          </span>
         </div>
-        <dl className="grid min-w-64 grid-cols-2 gap-3 text-sm">
-          <Info label="Country" value={project.country || "-"} />
-          <Info label="Customer" value={project.customer || "-"} />
-          <Info label="Project ID" value={project.project_id || "-"} />
-          <Info label="Updated" value={formatDate(project.updated_at)} />
-        </dl>
+        <p className="w-full text-sm leading-6 text-slate-600">{project.description || "No description."}</p>
+        <div className="mt-3 text-xs text-slate-400">Created at {formatDate(project.created_at)}</div>
       </div>
     </section>
   );
@@ -482,15 +475,6 @@ function Metric({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="text-2xl font-semibold">{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{label}</div>
-    </div>
-  );
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-1 truncate font-medium text-slate-900">{value}</dd>
     </div>
   );
 }
