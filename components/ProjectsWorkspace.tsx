@@ -34,6 +34,8 @@ type ProjectGroup = {
   projects: ProjectListItem[];
 };
 
+type TicketFilter = "all" | "active" | "pending_internal" | "urgent";
+
 const emptyTicketDraft: TicketDraft = {
   title: "",
   status: "pending_internal",
@@ -65,7 +67,8 @@ const eventRoleLabels: Record<EventRole, string> = {
   customer: "Customer",
   support: "Support",
   internal: "Internal",
-  system: "System",
+  sales: "Sales",
+  others: "Others",
 };
 
 export default function ProjectsWorkspace() {
@@ -76,6 +79,7 @@ export default function ProjectsWorkspace() {
   const [selectedTicketId, setSelectedTicketId] = useState("");
   const [projectQuery, setProjectQuery] = useState("");
   const [globalQuery, setGlobalQuery] = useState("");
+  const [ticketFilter, setTicketFilter] = useState<TicketFilter>("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -117,25 +121,43 @@ export default function ProjectsWorkspace() {
 
   const filteredTickets = useMemo(() => {
     const query = globalQuery.trim().toLowerCase();
-    if (!query) {
-      return tickets;
-    }
-    return tickets.filter((ticket) =>
-      [ticket.id, ticket.title, ticket.summary, ticket.next_action, ticket.status, ticket.priority]
+    return tickets.filter((ticket) => {
+      const matchesDashboardFilter =
+        ticketFilter === "all" ||
+        (ticketFilter === "active" && ["pending_internal", "pending_customer"].includes(ticket.status)) ||
+        (ticketFilter === "pending_internal" && ticket.status === "pending_internal") ||
+        (ticketFilter === "urgent" && ticket.priority === "urgent");
+
+      if (!matchesDashboardFilter) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      return [ticket.id, ticket.title, ticket.summary, ticket.next_action, ticket.status, ticket.priority]
         .join(" ")
         .toLowerCase()
-        .includes(query),
-    );
-  }, [tickets, globalQuery]);
+        .includes(query);
+    });
+  }, [tickets, globalQuery, ticketFilter]);
 
   const metrics = useMemo(() => {
     return {
       total: tickets.length,
       active: tickets.filter((ticket) => ticket.status !== "resolved").length,
-      elevated: tickets.filter((ticket) => ["high", "urgent"].includes(ticket.priority)).length,
-      pendingCustomer: tickets.filter((ticket) => ticket.status === "pending_customer").length,
+      pendingInternal: tickets.filter((ticket) => ticket.status === "pending_internal").length,
+      urgent: tickets.filter((ticket) => ticket.priority === "urgent").length,
     };
   }, [tickets]);
+
+  function applyTicketFilter(filter: TicketFilter) {
+    setTicketFilter(filter);
+    if (filter === "all") {
+      setGlobalQuery("");
+    }
+  }
 
   async function loadProject(folder: string) {
     setSelectedFolder(folder);
@@ -307,7 +329,7 @@ export default function ProjectsWorkspace() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
-      <header className="sticky top-0 z-20 flex h-20 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
+      <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Image
             src="/patrick.png"
@@ -379,10 +401,30 @@ export default function ProjectsWorkspace() {
             <>
               <ProjectHeader project={selectedProject} />
               <section className="mt-5 grid gap-3 md:grid-cols-4">
-                <Metric label="Total tickets" value={metrics.total} />
-                <Metric label="Active tickets" value={metrics.active} />
-                <Metric label="High / urgent" value={metrics.elevated} />
-                <Metric label="Pending customer" value={metrics.pendingCustomer} />
+                <Metric
+                  label="Total tickets"
+                  value={metrics.total}
+                  active={ticketFilter === "all" && !globalQuery}
+                  onClick={() => applyTicketFilter("all")}
+                />
+                <Metric
+                  label="Active tickets"
+                  value={metrics.active}
+                  active={ticketFilter === "active"}
+                  onClick={() => applyTicketFilter("active")}
+                />
+                <Metric
+                  label="Pending internal"
+                  value={metrics.pendingInternal}
+                  active={ticketFilter === "pending_internal"}
+                  onClick={() => applyTicketFilter("pending_internal")}
+                />
+                <Metric
+                  label="Urgent"
+                  value={metrics.urgent}
+                  active={ticketFilter === "urgent"}
+                  onClick={() => applyTicketFilter("urgent")}
+                />
               </section>
 
               <section className="mt-6">
@@ -470,12 +512,27 @@ function ProjectHeader({ project }: { project: ProjectInfo }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({
+  label,
+  value,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <button
+      onClick={onClick}
+      className={`rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+        active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
+      }`}
+    >
       <div className="text-2xl font-semibold">{value}</div>
       <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{label}</div>
-    </div>
+    </button>
   );
 }
 
@@ -554,9 +611,11 @@ function TicketCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="line-clamp-2 text-base text-slate-950">
-            <strong className="font-semibold">[{ticket.id}]</strong>
-            <span className="font-semibold">: {ticket.title}</span>
+          <h3 className="line-clamp-2 text-base font-semibold leading-6 text-slate-950">
+            <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
+              {ticket.id}
+            </span>
+            <span>{ticket.title}</span>
           </h3>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
@@ -859,7 +918,6 @@ function TimelineItem({
           />
         </div>
       ) : null}
-      <div className="mt-2 text-[11px] text-slate-400">Event index {index}</div>
     </div>
   );
 }

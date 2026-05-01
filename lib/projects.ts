@@ -198,7 +198,7 @@ export function updateTicketPayload(existing: Ticket, input: TicketInput): Ticke
 export function createEventPayload(input: EventInput): TimelineEvent {
   return normalizeEvent({
     time: cleanText(input.time) || new Date().toISOString(),
-    role: pickValue(input.role, EVENT_ROLES, "support"),
+    role: pickValue(input.role, EVENT_ROLES, "others"),
     content: cleanText(input.content),
   });
 }
@@ -206,7 +206,7 @@ export function createEventPayload(input: EventInput): TimelineEvent {
 export function updateEventPayload(existing: TimelineEvent, input: EventInput): TimelineEvent {
   return normalizeEvent({
     time: cleanText(input.time) || existing.time,
-    role: pickValue(input.role, EVENT_ROLES, existing.role),
+    role: pickValue(input.role, EVENT_ROLES, pickValue(existing.role, EVENT_ROLES, "others")),
     content: cleanText(input.content),
   });
 }
@@ -241,7 +241,7 @@ function normalizeEvents(events: unknown): TimelineEvent[] {
 function normalizeEvent(event: Partial<TimelineEvent>): TimelineEvent {
   return {
     time: cleanText(event.time) || new Date().toISOString(),
-    role: pickValue(event.role, EVENT_ROLES, "support"),
+    role: pickValue(event.role, EVENT_ROLES, "others"),
     content: cleanText(event.content),
   };
 }

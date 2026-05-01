@@ -8,7 +8,7 @@ export const STATUSES = [
 
 export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 
-export const EVENT_ROLES = ["customer", "support", "internal", "system"] as const;
+export const EVENT_ROLES = ["customer", "support", "internal", "sales", "others"] as const;
 
 export type TicketStatus = (typeof STATUSES)[number];
 export type TicketPriority = (typeof PRIORITIES)[number];
