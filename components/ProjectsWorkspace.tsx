@@ -28,6 +28,11 @@ type EventDraft = {
   content: string;
 };
 
+type ProjectGroup = {
+  country: string;
+  projects: ProjectListItem[];
+};
+
 const emptyTicketDraft: TicketDraft = {
   title: "",
   status: "open",
@@ -92,6 +97,22 @@ export default function ProjectsWorkspace() {
         .includes(query),
     );
   }, [projects, projectQuery]);
+
+  const projectGroups = useMemo(() => {
+    const groups = new Map<string, ProjectListItem[]>();
+
+    for (const item of filteredProjects) {
+      const [country = "Unknown"] = item.folder.split("/");
+      const current = groups.get(country) ?? [];
+      current.push(item);
+      groups.set(country, current);
+    }
+
+    return Array.from(groups, ([country, groupProjects]) => ({
+      country,
+      projects: groupProjects.sort((a, b) => a.project.project_name.localeCompare(b.project.project_name)),
+    })).sort((a, b) => a.country.localeCompare(b.country));
+  }, [filteredProjects]);
 
   const filteredTickets = useMemo(() => {
     const query = globalQuery.trim().toLowerCase();
@@ -305,20 +326,14 @@ export default function ProjectsWorkspace() {
             className="mb-3 h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
             placeholder="Filter projects"
           />
-          <div className="space-y-1">
-            {filteredProjects.map(({ folder, project }) => (
-              <button
-                key={folder}
-                onClick={() => void loadProject(folder)}
-                className={`w-full rounded-lg border px-3 py-3 text-left transition ${
-                  folder === selectedFolder
-                    ? "border-slate-300 bg-slate-100 shadow-sm"
-                    : "border-transparent hover:border-slate-200 hover:bg-slate-50"
-                }`}
-              >
-                <div className="truncate text-sm font-medium">{project.project_name}</div>
-                <div className="mt-1 truncate text-xs text-slate-500">{folder}</div>
-              </button>
+          <div className="space-y-3">
+            {projectGroups.map((group) => (
+              <ProjectTreeGroup
+                key={group.country}
+                group={group}
+                selectedFolder={selectedFolder}
+                onSelect={(folder) => void loadProject(folder)}
+              />
             ))}
             {!loading && filteredProjects.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
@@ -350,7 +365,7 @@ export default function ProjectsWorkspace() {
                   <h2 className="text-sm font-semibold text-slate-900">Ticket Dashboard</h2>
                   <span className="text-xs text-slate-500">{filteredTickets.length} shown</span>
                 </div>
-                <div className="grid gap-3 xl:grid-cols-2">
+                <div className="space-y-3">
                   {filteredTickets.map((ticket) => (
                     <TicketCard
                       key={ticket.id}
@@ -448,20 +463,69 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ProjectTreeGroup({
+  group,
+  selectedFolder,
+  onSelect,
+}: {
+  group: ProjectGroup;
+  selectedFolder: string;
+  onSelect: (folder: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50"
+        aria-expanded={expanded}
+      >
+        <span className="w-3 text-slate-400">{expanded ? "▾" : "▸"}</span>
+        <span className="truncate">{group.country}</span>
+        <span className="ml-auto rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+          {group.projects.length}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="ml-3 border-l border-slate-200 pl-2">
+          {group.projects.map(({ folder, project }) => (
+            <button
+              key={folder}
+              onClick={() => onSelect(folder)}
+              className={`mt-1 flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition ${
+                folder === selectedFolder ? "bg-slate-100 text-slate-950" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{project.project_name}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function TicketCard({ ticket, active, onClick }: { ticket: Ticket; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+      className={`w-full rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
         active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs font-medium text-slate-500">{ticket.id}</div>
-          <h3 className="mt-1 line-clamp-2 text-base font-semibold text-slate-950">{ticket.title}</h3>
+          <h3 className="line-clamp-2 text-base text-slate-950">
+            <strong className="font-semibold">[{ticket.id}]</strong>
+            <span className="font-semibold">: {ticket.title}</span>
+          </h3>
         </div>
-        <div className="flex shrink-0 flex-col gap-1">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
           <StatusBadge status={ticket.status} />
           <PriorityBadge priority={ticket.priority} />
         </div>
