@@ -267,7 +267,7 @@ export default function ProjectsWorkspace() {
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events`,
         {
           method: "POST",
-          body: JSON.stringify(draft),
+          body: JSON.stringify(eventDraftForApi(draft)),
         },
       );
       setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
@@ -283,7 +283,7 @@ export default function ProjectsWorkspace() {
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events/${index}`,
         {
           method: "PUT",
-          body: JSON.stringify(draft),
+          body: JSON.stringify(eventDraftForApi(draft)),
         },
       );
       setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
@@ -1033,6 +1033,13 @@ function eventToDraft(event: TimelineEvent): EventDraft {
     time: dateInputValue(event.time),
     role: event.role,
     content: event.content,
+  };
+}
+
+function eventDraftForApi(draft: EventDraft): EventDraft {
+  return {
+    ...draft,
+    time: draft.time.includes("T") ? draft.time : `${draft.time}T00:00:00`,
   };
 }
 

@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   description: "Local technical support project ticket management.",
   icons: {
     icon: "/patrick.png",
+    shortcut: "/patrick.png",
     apple: "/patrick.png",
   },
 };
