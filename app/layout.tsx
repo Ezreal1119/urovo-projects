@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Urovo Projects",
   description: "Local technical support project ticket management.",
+  icons: {
+    icon: "/patrick.png",
+    apple: "/patrick.png",
+  },
 };
 
 export default function RootLayout({

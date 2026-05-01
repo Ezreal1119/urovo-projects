@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import {
   EVENT_ROLES,
   EventRole,
@@ -35,20 +36,19 @@ type ProjectGroup = {
 
 const emptyTicketDraft: TicketDraft = {
   title: "",
-  status: "open",
+  status: "in_progress",
   priority: "medium",
   summary: "",
   next_action: "",
 };
 
 const emptyEventDraft: EventDraft = {
-  time: "",
+  time: todayDate(),
   role: "support",
   content: "",
 };
 
 const statusLabels: Record<TicketStatus, string> = {
-  open: "Open",
   in_progress: "In progress",
   pending_customer: "Pending customer",
   pending_internal: "Pending internal",
@@ -81,7 +81,10 @@ export default function ProjectsWorkspace() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [editingNextActionId, setEditingNextActionId] = useState("");
+  const [nextActionDraft, setNextActionDraft] = useState("");
 
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
 
@@ -130,7 +133,7 @@ export default function ProjectsWorkspace() {
   const metrics = useMemo(() => {
     return {
       total: tickets.length,
-      open: tickets.filter((ticket) => !["resolved", "closed"].includes(ticket.status)).length,
+      active: tickets.filter((ticket) => !["resolved", "closed"].includes(ticket.status)).length,
       elevated: tickets.filter((ticket) => ["high", "urgent"].includes(ticket.priority)).length,
       pendingCustomer: tickets.filter((ticket) => ticket.status === "pending_customer").length,
     };
@@ -218,9 +221,29 @@ export default function ProjectsWorkspace() {
         body: JSON.stringify(draft),
       });
       setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+      showToast("Ticket changes saved.");
     } finally {
       setSaving(false);
     }
+  }
+
+  function startNextActionEdit(ticket: Ticket) {
+    setEditingNextActionId(ticket.id);
+    setNextActionDraft(ticket.next_action);
+  }
+
+  async function saveNextAction(ticket: Ticket) {
+    await updateTicket(ticket.id, {
+      ...ticketToDraft(ticket),
+      next_action: nextActionDraft,
+    });
+    setEditingNextActionId("");
+    setNextActionDraft("");
+  }
+
+  function showToast(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2400);
   }
 
   async function deleteTicket(ticketId: string) {
@@ -286,14 +309,16 @@ export default function ProjectsWorkspace() {
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
       <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
         <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-slate-950 text-sm font-semibold text-white">
-            UP
-          </div>
+          <Image
+            src="/patrick.png"
+            alt="Urovo Projects"
+            width={36}
+            height={36}
+            className="h-9 w-9 rounded-lg object-cover"
+            priority
+          />
           <div className="min-w-0">
-            <div className="text-sm font-semibold">Urovo Projects</div>
-            <div className="truncate text-xs text-slate-500">
-              {selectedProject?.project_name ?? "No project selected"}
-            </div>
+            <div className="text-sm font-semibold text-slate-950">Urovo Projects</div>
           </div>
         </div>
         <label className="relative hidden w-full max-w-md md:block">
@@ -355,7 +380,7 @@ export default function ProjectsWorkspace() {
               <ProjectHeader project={selectedProject} />
               <section className="mt-5 grid gap-3 md:grid-cols-4">
                 <Metric label="Total tickets" value={metrics.total} />
-                <Metric label="Open tickets" value={metrics.open} />
+                <Metric label="Active tickets" value={metrics.active} />
                 <Metric label="High / urgent" value={metrics.elevated} />
                 <Metric label="Pending customer" value={metrics.pendingCustomer} />
               </section>
@@ -372,6 +397,13 @@ export default function ProjectsWorkspace() {
                       ticket={ticket}
                       active={ticket.id === selectedTicketId}
                       onClick={() => setSelectedTicketId(ticket.id)}
+                      isEditingNextAction={ticket.id === editingNextActionId}
+                      nextActionDraft={nextActionDraft}
+                      saving={saving}
+                      onStartNextActionEdit={() => startNextActionEdit(ticket)}
+                      onNextActionDraftChange={setNextActionDraft}
+                      onCancelNextActionEdit={() => setEditingNextActionId("")}
+                      onSaveNextAction={() => void saveNextAction(ticket)}
                     />
                   ))}
                 </div>
@@ -417,6 +449,8 @@ export default function ProjectsWorkspace() {
           onCreate={(draft) => void createTicket(draft)}
         />
       ) : null}
+
+      {toast ? <Toast message={toast} /> : null}
     </div>
   );
 }
@@ -472,7 +506,7 @@ function ProjectTreeGroup({
   selectedFolder: string;
   onSelect: (folder: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div>
@@ -510,11 +544,33 @@ function ProjectTreeGroup({
   );
 }
 
-function TicketCard({ ticket, active, onClick }: { ticket: Ticket; active: boolean; onClick: () => void }) {
+function TicketCard({
+  ticket,
+  active,
+  onClick,
+  isEditingNextAction,
+  nextActionDraft,
+  saving,
+  onStartNextActionEdit,
+  onNextActionDraftChange,
+  onCancelNextActionEdit,
+  onSaveNextAction,
+}: {
+  ticket: Ticket;
+  active: boolean;
+  onClick: () => void;
+  isEditingNextAction: boolean;
+  nextActionDraft: string;
+  saving: boolean;
+  onStartNextActionEdit: () => void;
+  onNextActionDraftChange: (value: string) => void;
+  onCancelNextActionEdit: () => void;
+  onSaveNextAction: () => void;
+}) {
   return (
-    <button
+    <div
       onClick={onClick}
-      className={`w-full rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+      className={`w-full cursor-pointer rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
         active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
       }`}
     >
@@ -531,15 +587,53 @@ function TicketCard({ ticket, active, onClick }: { ticket: Ticket; active: boole
         </div>
       </div>
       <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{ticket.summary || "No summary."}</p>
-      <div className="mt-4 rounded-lg bg-slate-50 p-3">
-        <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Next action</div>
-        <p className="mt-1 line-clamp-2 text-sm text-slate-700">{ticket.next_action || "No next action."}</p>
+      <div
+        className={`mt-4 rounded-lg bg-slate-50 p-3 ${isEditingNextAction ? "" : "cursor-pointer hover:bg-slate-100"}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (!isEditingNextAction) {
+            onStartNextActionEdit();
+          }
+        }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Next action</div>
+        </div>
+        {isEditingNextAction ? (
+          <div className="mt-2 space-y-2">
+            <textarea
+              value={nextActionDraft}
+              onChange={(event) => onNextActionDraftChange(event.target.value)}
+              className="form-input min-h-20 resize-y"
+              placeholder="Owner, expected response, or next technical step"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={onCancelNextActionEdit}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={onSaveNextAction}
+                className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-1 line-clamp-2 text-sm text-slate-700">{ticket.next_action || "No next action."}</p>
+        )}
       </div>
       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>Updated {formatDateTime(ticket.updated_at)}</span>
+        <span>Updated {formatDateOnly(ticket.updated_at)}</span>
         <span>{ticket.events.length} events</span>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -605,6 +699,7 @@ function TicketDrawer({
             initial={ticketToDraft(ticket)}
             saving={saving}
             submitLabel="Save changes"
+            showNextAction={false}
             onSubmit={onSave}
           />
           <div className="flex justify-end">
@@ -655,11 +750,13 @@ function TicketForm({
   initial,
   saving,
   submitLabel,
+  showNextAction = true,
   onSubmit,
 }: {
   initial: TicketDraft;
   saving: boolean;
   submitLabel: string;
+  showNextAction?: boolean;
   onSubmit: (draft: TicketDraft) => void;
 }) {
   const [draft, setDraft] = useState<TicketDraft>(initial);
@@ -716,14 +813,16 @@ function TicketForm({
           placeholder="Current issue context and investigation notes"
         />
       </Field>
-      <Field label="Next action">
-        <textarea
-          value={draft.next_action}
-          onChange={(event) => setDraft({ ...draft, next_action: event.target.value })}
-          className="form-input min-h-20 resize-y"
-          placeholder="Owner, expected response, or next technical step"
-        />
-      </Field>
+      {showNextAction ? (
+        <Field label="Next action">
+          <textarea
+            value={draft.next_action}
+            onChange={(event) => setDraft({ ...draft, next_action: event.target.value })}
+            className="form-input min-h-20 resize-y"
+            placeholder="Owner, expected response, or next technical step"
+          />
+        </Field>
+      ) : null}
       <button
         disabled={saving}
         className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
@@ -757,7 +856,7 @@ function TimelineItem({
             <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
               {eventRoleLabels[event.role]}
             </span>
-            <span className="text-xs text-slate-500">{formatDateTime(event.time)}</span>
+            <span className="text-xs text-slate-500">{formatDateOnly(event.time)}</span>
           </div>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{event.content || "-"}</p>
         </div>
@@ -815,10 +914,10 @@ function EventForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Time">
           <input
+            type="date"
             value={draft.time}
             onChange={(event) => setDraft({ ...draft, time: event.target.value })}
             className="form-input"
-            placeholder="2026-05-01T10:20:00"
           />
         </Field>
         <Field label="Role">
@@ -865,7 +964,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function StatusBadge({ status }: { status: TicketStatus }) {
   const styles: Record<TicketStatus, string> = {
-    open: "bg-sky-50 text-sky-700",
     in_progress: "bg-violet-50 text-violet-700",
     pending_customer: "bg-amber-50 text-amber-800",
     pending_internal: "bg-orange-50 text-orange-800",
@@ -891,6 +989,14 @@ function PriorityBadge({ priority }: { priority: TicketPriority }) {
 
 function Overlay({ children }: { children: React.ReactNode }) {
   return <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/30 p-4">{children}</div>;
+}
+
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm font-medium text-emerald-800 shadow-xl">
+      {message}
+    </div>
+  );
 }
 
 function projectApiPath(key: string) {
@@ -924,7 +1030,7 @@ function ticketToDraft(ticket: Ticket): TicketDraft {
 
 function eventToDraft(event: TimelineEvent): EventDraft {
   return {
-    time: event.time,
+    time: dateInputValue(event.time),
     role: event.role,
     content: event.content,
   };
@@ -937,12 +1043,17 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
 }
 
-function formatDateTime(value: string) {
+function formatDateOnly(value: string) {
   if (!value) {
     return "-";
   }
-  return new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return dateInputValue(value);
+}
+
+function dateInputValue(value: string) {
+  return value.includes("T") ? value.split("T")[0] : value;
+}
+
+function todayDate() {
+  return new Date().toISOString().split("T")[0];
 }

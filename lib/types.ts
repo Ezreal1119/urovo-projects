@@ -1,7 +1,6 @@
 export const PROJECT_PREFIX = "proj_";
 
 export const STATUSES = [
-  "open",
   "in_progress",
   "pending_customer",
   "pending_internal",
