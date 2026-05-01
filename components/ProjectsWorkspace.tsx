@@ -36,7 +36,7 @@ type ProjectGroup = {
 
 const emptyTicketDraft: TicketDraft = {
   title: "",
-  status: "in_progress",
+  status: "pending_internal",
   priority: "medium",
   summary: "",
   next_action: "",
@@ -49,11 +49,9 @@ const emptyEventDraft: EventDraft = {
 };
 
 const statusLabels: Record<TicketStatus, string> = {
-  in_progress: "In progress",
-  pending_customer: "Pending customer",
-  pending_internal: "Pending internal",
-  resolved: "Resolved",
-  closed: "Closed",
+  pending_internal: "[Pending]: Internal",
+  pending_customer: "[Pending]: Customer",
+  resolved: "[Resolved]",
 };
 
 const priorityLabels: Record<TicketPriority, string> = {
@@ -133,7 +131,7 @@ export default function ProjectsWorkspace() {
   const metrics = useMemo(() => {
     return {
       total: tickets.length,
-      active: tickets.filter((ticket) => !["resolved", "closed"].includes(ticket.status)).length,
+      active: tickets.filter((ticket) => ticket.status !== "resolved").length,
       elevated: tickets.filter((ticket) => ["high", "urgent"].includes(ticket.priority)).length,
       pendingCustomer: tickets.filter((ticket) => ticket.status === "pending_customer").length,
     };
@@ -213,7 +211,7 @@ export default function ProjectsWorkspace() {
     }
   }
 
-  async function updateTicket(ticketId: string, draft: TicketDraft) {
+  async function updateTicket(ticketId: string, draft: TicketDraft, options: { showSuccessToast?: boolean } = {}) {
     setSaving(true);
     try {
       const data = await api<{ ticket: Ticket }>(`${projectApiPath(selectedFolder)}/tickets/${ticketId}`, {
@@ -221,7 +219,9 @@ export default function ProjectsWorkspace() {
         body: JSON.stringify(draft),
       });
       setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
-      showToast("Ticket changes saved.");
+      if (options.showSuccessToast ?? true) {
+        showToast("Ticket changes saved.");
+      }
     } finally {
       setSaving(false);
     }
@@ -236,7 +236,7 @@ export default function ProjectsWorkspace() {
     await updateTicket(ticket.id, {
       ...ticketToDraft(ticket),
       next_action: nextActionDraft,
-    });
+    }, { showSuccessToast: false });
     setEditingNextActionId("");
     setNextActionDraft("");
   }
@@ -399,10 +399,8 @@ export default function ProjectsWorkspace() {
                       onClick={() => setSelectedTicketId(ticket.id)}
                       isEditingNextAction={ticket.id === editingNextActionId}
                       nextActionDraft={nextActionDraft}
-                      saving={saving}
                       onStartNextActionEdit={() => startNextActionEdit(ticket)}
                       onNextActionDraftChange={setNextActionDraft}
-                      onCancelNextActionEdit={() => setEditingNextActionId("")}
                       onSaveNextAction={() => void saveNextAction(ticket)}
                     />
                   ))}
@@ -550,10 +548,8 @@ function TicketCard({
   onClick,
   isEditingNextAction,
   nextActionDraft,
-  saving,
   onStartNextActionEdit,
   onNextActionDraftChange,
-  onCancelNextActionEdit,
   onSaveNextAction,
 }: {
   ticket: Ticket;
@@ -561,10 +557,8 @@ function TicketCard({
   onClick: () => void;
   isEditingNextAction: boolean;
   nextActionDraft: string;
-  saving: boolean;
   onStartNextActionEdit: () => void;
   onNextActionDraftChange: (value: string) => void;
-  onCancelNextActionEdit: () => void;
   onSaveNextAction: () => void;
 }) {
   return (
@@ -591,7 +585,12 @@ function TicketCard({
         className={`mt-4 rounded-lg bg-slate-50 p-3 ${isEditingNextAction ? "" : "cursor-pointer hover:bg-slate-100"}`}
         onClick={(event) => {
           event.stopPropagation();
-          if (!isEditingNextAction) {
+          if (isEditingNextAction) {
+            const target = event.target as HTMLElement;
+            if (target.tagName !== "TEXTAREA") {
+              onSaveNextAction();
+            }
+          } else {
             onStartNextActionEdit();
           }
         }}
@@ -600,37 +599,20 @@ function TicketCard({
           <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Next action</div>
         </div>
         {isEditingNextAction ? (
-          <div className="mt-2 space-y-2">
+          <div className="mt-2">
             <textarea
               value={nextActionDraft}
               onChange={(event) => onNextActionDraftChange(event.target.value)}
               className="form-input min-h-20 resize-y"
               placeholder="Owner, expected response, or next technical step"
             />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={onCancelNextActionEdit}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={onSaveNextAction}
-                className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-              >
-                {saving ? "Saving..." : "Save"}
-              </button>
-            </div>
           </div>
         ) : (
           <p className="mt-1 line-clamp-2 text-sm text-slate-700">{ticket.next_action || "No next action."}</p>
         )}
       </div>
       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-        <span>Updated {formatDateOnly(ticket.updated_at)}</span>
+        <span>Updated {formatDateTimeFull(ticket.updated_at)}</span>
         <span>{ticket.events.length} events</span>
       </div>
     </div>
@@ -651,7 +633,10 @@ function TicketModal({
       <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">New Ticket</h2>
-          <button onClick={onClose} className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
             Close
           </button>
         </div>
@@ -688,7 +673,10 @@ function TicketDrawer({
             <div className="text-xs font-medium text-slate-500">{ticket.id}</div>
             <h2 className="mt-1 text-xl font-semibold">{ticket.title}</h2>
           </div>
-          <button onClick={onClose} className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
             Close
           </button>
         </div>
@@ -725,7 +713,11 @@ function TicketDrawer({
                   index={index}
                   saving={saving}
                   onUpdate={(draft) => onUpdateEvent(index, draft)}
-                  onDelete={() => onDeleteEvent(index)}
+                  onDelete={() => {
+                    if (confirm("Delete this timeline event? This writes directly to tickets.json.")) {
+                      onDeleteEvent(index);
+                    }
+                  }}
                 />
               ))}
             </div>
@@ -964,11 +956,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function StatusBadge({ status }: { status: TicketStatus }) {
   const styles: Record<TicketStatus, string> = {
-    in_progress: "bg-violet-50 text-violet-700",
-    pending_customer: "bg-amber-50 text-amber-800",
     pending_internal: "bg-orange-50 text-orange-800",
+    pending_customer: "bg-amber-50 text-amber-800",
     resolved: "bg-emerald-50 text-emerald-700",
-    closed: "bg-slate-100 text-slate-600",
   };
   return <span className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}>{statusLabels[status]}</span>;
 }
@@ -1055,6 +1045,17 @@ function formatDateOnly(value: string) {
     return "-";
   }
   return dateInputValue(value);
+}
+
+function formatDateTimeFull(value: string) {
+  if (!value) {
+    return "-";
+  }
+  const normalized = value.replace("T", " ");
+  if (normalized.length === 10) {
+    return `${normalized} 00:00:00`;
+  }
+  return normalized.slice(0, 19);
 }
 
 function dateInputValue(value: string) {

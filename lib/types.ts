@@ -1,11 +1,9 @@
 export const PROJECT_PREFIX = "proj_";
 
 export const STATUSES = [
-  "in_progress",
-  "pending_customer",
   "pending_internal",
+  "pending_customer",
   "resolved",
-  "closed",
 ] as const;
 
 export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;

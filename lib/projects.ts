@@ -172,7 +172,7 @@ export function createTicketPayload(input: TicketInput, existing: Ticket[]): Tic
   return normalizeTicket({
     id: nextTicketId(existing),
     title: cleanText(input.title) || "Untitled ticket",
-    status: pickValue(input.status, STATUSES, "in_progress"),
+    status: pickValue(input.status, STATUSES, "pending_internal"),
     priority: pickValue(input.priority, PRIORITIES, "medium"),
     created_at: now,
     updated_at: now,
@@ -186,7 +186,7 @@ export function updateTicketPayload(existing: Ticket, input: TicketInput): Ticke
   return normalizeTicket({
     ...existing,
     title: cleanText(input.title) || existing.title,
-    status: pickValue(input.status, STATUSES, existing.status),
+    status: pickValue(input.status, STATUSES, pickValue(existing.status, STATUSES, "pending_internal")),
     priority: pickValue(input.priority, PRIORITIES, existing.priority),
     summary: cleanText(input.summary),
     next_action: cleanText(input.next_action),
@@ -224,7 +224,7 @@ function normalizeTicket(ticket: Ticket): Ticket {
   return {
     id: cleanText(ticket.id) || "PK-001",
     title: cleanText(ticket.title) || "Untitled ticket",
-    status: pickValue(ticket.status, STATUSES, "in_progress"),
+    status: pickValue(ticket.status, STATUSES, "pending_internal"),
     priority: pickValue(ticket.priority, PRIORITIES, "medium"),
     created_at: cleanText(ticket.created_at) || now,
     updated_at: cleanText(ticket.updated_at) || now,
