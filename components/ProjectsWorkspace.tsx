@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { APP_TIME_ZONE, beijingTodayDate } from "@/lib/time";
 import {
@@ -524,7 +524,7 @@ export default function ProjectsWorkspace() {
         <TicketModal
           saving={saving}
           onClose={() => setShowNewTicket(false)}
-          onCreate={(draft) => void createTicket(draft)}
+          onCreate={createTicket}
         />
       ) : null}
 
@@ -707,21 +707,37 @@ function TicketModal({
 }: {
   saving: boolean;
   onClose: () => void;
-  onCreate: (draft: TicketDraft) => void;
+  onCreate: (draft: TicketDraft) => void | Promise<void>;
 }) {
+  const [dirty, setDirty] = useState(false);
+
+  function closeModal() {
+    if (dirty && !confirm("Discard this new ticket draft?")) {
+      return;
+    }
+    onClose();
+  }
+
   return (
     <Overlay>
       <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">New Ticket</h2>
           <button
-            onClick={onClose}
+            onClick={closeModal}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
           >
             Close
           </button>
         </div>
-        <TicketForm initial={emptyTicketDraft} saving={saving} submitLabel="Create ticket" onSubmit={onCreate} />
+        <TicketForm
+          initial={emptyTicketDraft}
+          saving={saving}
+          submitLabel="Create ticket"
+          preventEnterSubmit
+          onDirtyChange={setDirty}
+          onSubmit={onCreate}
+        />
       </div>
     </Overlay>
   );
@@ -836,6 +852,7 @@ function TicketForm({
   saving,
   submitLabel,
   showNextAction = true,
+  preventEnterSubmit = false,
   onDirtyChange,
   onSubmit,
 }: {
@@ -843,6 +860,7 @@ function TicketForm({
   saving: boolean;
   submitLabel: string;
   showNextAction?: boolean;
+  preventEnterSubmit?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSubmit: (draft: TicketDraft) => void | Promise<void>;
 }) {
@@ -861,8 +879,18 @@ function TicketForm({
     onDirtyChange?.(false);
   }
 
+  function preventKeyboardSubmit(event: KeyboardEvent<HTMLFormElement>) {
+    if (!preventEnterSubmit || event.key !== "Enter") {
+      return;
+    }
+    if (event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+    event.preventDefault();
+  }
+
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} onKeyDown={preventKeyboardSubmit} className="space-y-4">
       <Field label="Title">
         <input
           required
