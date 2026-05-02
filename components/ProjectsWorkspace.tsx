@@ -71,6 +71,14 @@ const eventRoleLabels: Record<EventRole, string> = {
   others: "Others",
 };
 
+const eventRoleStyles: Record<EventRole, string> = {
+  customer: "bg-sky-50 text-sky-700 ring-sky-200",
+  support: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  internal: "bg-violet-50 text-violet-700 ring-violet-200",
+  sales: "bg-amber-50 text-amber-800 ring-amber-200",
+  others: "bg-slate-100 text-slate-600 ring-slate-200",
+};
+
 export default function ProjectsWorkspace() {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [selectedFolder, setSelectedFolder] = useState("");
@@ -888,7 +896,7 @@ function TimelineItem({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+            <span className={`rounded-md px-2 py-1 text-xs font-medium ring-1 ${eventRoleStyles[event.role]}`}>
               {eventRoleLabels[event.role]}
             </span>
             <span className="text-xs text-slate-500">{formatDateOnly(event.time)}</span>

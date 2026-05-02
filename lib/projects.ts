@@ -167,10 +167,10 @@ export async function writeTickets(key: string, tickets: Ticket[]) {
   await writeJsonAtomic(path.join(projectDir(key), "tickets.json"), tickets);
 }
 
-export function createTicketPayload(input: TicketInput, existing: Ticket[]): Ticket {
+export function createTicketPayload(input: TicketInput, existing: Ticket[], projectName: string): Ticket {
   const now = new Date().toISOString();
   return normalizeTicket({
-    id: nextTicketId(existing),
+    id: nextTicketId(existing, projectName),
     title: cleanText(input.title) || "Untitled ticket",
     status: pickValue(input.status, STATUSES, "pending_internal"),
     priority: pickValue(input.priority, PRIORITIES, "medium"),
@@ -254,10 +254,17 @@ function pickValue<T extends string>(value: unknown, allowed: readonly T[], fall
   return typeof value === "string" && allowed.includes(value as T) ? (value as T) : fallback;
 }
 
-function nextTicketId(existing: Ticket[]) {
+function nextTicketId(existing: Ticket[], projectName: string) {
+  const prefix = ticketPrefix(projectName);
+  const matcher = new RegExp(`^${prefix}-(\\d+)$`, "i");
   const highest = existing.reduce((max, ticket) => {
-    const match = ticket.id.match(/^PK-(\d+)$/i);
+    const match = ticket.id.match(matcher);
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
-  return `PK-${String(highest + 1).padStart(3, "0")}`;
+  return `${prefix}-${String(highest + 1).padStart(3, "0")}`;
+}
+
+function ticketPrefix(projectName: string) {
+  const letters = projectName.replace(/[^a-z]/gi, "").slice(0, 2).toUpperCase();
+  return letters.padEnd(2, "X");
 }

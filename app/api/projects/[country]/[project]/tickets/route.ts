@@ -30,8 +30,9 @@ export async function POST(request: Request, context: Context) {
     const { country, project } = await context.params;
     const key = projectKeyFromSegments([country, project]);
     const input = (await request.json()) as TicketInput;
+    const projectInfo = await readProject(key);
     const tickets = await readTickets(key);
-    const ticket = createTicketPayload(input, tickets);
+    const ticket = createTicketPayload(input, tickets, projectInfo.project_name);
     const nextTickets = [ticket, ...tickets].sort(sortTickets);
     await writeTickets(key, nextTickets);
     return Response.json({ ticket }, { status: 201 });
