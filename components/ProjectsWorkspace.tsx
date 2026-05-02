@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { APP_TIME_ZONE, beijingTodayDate } from "@/lib/time";
 import {
   EVENT_ROLES,
   EventRole,
@@ -1148,7 +1149,7 @@ function formatDate(value: string) {
   if (!value) {
     return "-";
   }
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: APP_TIME_ZONE }).format(new Date(value));
 }
 
 function formatDateOnly(value: string) {
@@ -1162,6 +1163,9 @@ function formatDateTimeFull(value: string) {
   if (!value) {
     return "-";
   }
+  if (hasExplicitTimeZone(value)) {
+    return formatBeijingDateTime(value);
+  }
   const normalized = value.replace("T", " ");
   if (normalized.length === 10) {
     return `${normalized} 00:00:00`;
@@ -1169,10 +1173,29 @@ function formatDateTimeFull(value: string) {
   return normalized.slice(0, 19);
 }
 
+function formatBeijingDateTime(value: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+}
+
+function hasExplicitTimeZone(value: string) {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
+}
+
 function dateInputValue(value: string) {
   return value.includes("T") ? value.split("T")[0] : value;
 }
 
 function todayDate() {
-  return new Date().toISOString().split("T")[0];
+  return beijingTodayDate();
 }

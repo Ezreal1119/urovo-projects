@@ -6,6 +6,7 @@ import {
   updateEventPayload,
   writeTickets,
 } from "@/lib/projects";
+import { beijingNowIsoString } from "@/lib/time";
 import { EventInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,7 +34,7 @@ export async function PUT(request: Request, context: Context) {
     const ticket = {
       ...tickets[ticketIndex],
       events: events.toSpliced(index, 1, event).sort(sortEvents),
-      updated_at: new Date().toISOString(),
+      updated_at: beijingNowIsoString(),
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
     await writeTickets(key, nextTickets);
@@ -62,7 +63,7 @@ export async function DELETE(_request: Request, context: Context) {
     const ticket = {
       ...tickets[ticketIndex],
       events: events.toSpliced(index, 1),
-      updated_at: new Date().toISOString(),
+      updated_at: beijingNowIsoString(),
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
     await writeTickets(key, nextTickets);

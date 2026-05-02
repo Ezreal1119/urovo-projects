@@ -13,6 +13,7 @@ import {
   TicketInput,
   TimelineEvent,
 } from "./types";
+import { beijingNowIsoString } from "./time";
 
 const DEFAULT_PROJECT: ProjectInfo = {
   project_id: "",
@@ -168,7 +169,7 @@ export async function writeTickets(key: string, tickets: Ticket[]) {
 }
 
 export function createTicketPayload(input: TicketInput, existing: Ticket[], projectName: string): Ticket {
-  const now = new Date().toISOString();
+  const now = beijingNowIsoString();
   return normalizeTicket({
     id: nextTicketId(existing, projectName),
     title: cleanText(input.title) || "Untitled ticket",
@@ -191,13 +192,13 @@ export function updateTicketPayload(existing: Ticket, input: TicketInput): Ticke
     summary: cleanText(input.summary),
     next_action: cleanText(input.next_action),
     events: input.events ? normalizeEvents(input.events) : existing.events,
-    updated_at: new Date().toISOString(),
+    updated_at: beijingNowIsoString(),
   });
 }
 
 export function createEventPayload(input: EventInput): TimelineEvent {
   return normalizeEvent({
-    time: cleanText(input.time) || new Date().toISOString(),
+    time: cleanText(input.time) || beijingNowIsoString(),
     role: pickValue(input.role, EVENT_ROLES, "others"),
     content: cleanText(input.content),
   });
@@ -220,7 +221,7 @@ export function sortEvents(a: TimelineEvent, b: TimelineEvent) {
 }
 
 function normalizeTicket(ticket: Ticket): Ticket {
-  const now = new Date().toISOString();
+  const now = beijingNowIsoString();
   return {
     id: cleanText(ticket.id) || "PK-001",
     title: cleanText(ticket.title) || "Untitled ticket",
@@ -240,7 +241,7 @@ function normalizeEvents(events: unknown): TimelineEvent[] {
 
 function normalizeEvent(event: Partial<TimelineEvent>): TimelineEvent {
   return {
-    time: cleanText(event.time) || new Date().toISOString(),
+    time: cleanText(event.time) || beijingNowIsoString(),
     role: pickValue(event.role, EVENT_ROLES, "others"),
     content: cleanText(event.content),
   };

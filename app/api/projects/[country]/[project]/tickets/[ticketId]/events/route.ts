@@ -6,6 +6,7 @@ import {
   sortTickets,
   writeTickets,
 } from "@/lib/projects";
+import { beijingNowIsoString } from "@/lib/time";
 import { EventInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -27,7 +28,7 @@ export async function POST(request: Request, context: Context) {
     const ticket = {
       ...tickets[ticketIndex],
       events: [...tickets[ticketIndex].events, event].sort(sortEvents),
-      updated_at: new Date().toISOString(),
+      updated_at: beijingNowIsoString(),
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
     await writeTickets(key, nextTickets);
