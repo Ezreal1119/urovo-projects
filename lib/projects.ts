@@ -4,6 +4,7 @@ import path from "path";
 import {
   EVENT_ROLES,
   EventInput,
+  DashboardData,
   PRIORITIES,
   PROJECT_PREFIX,
   ProjectInfo,
@@ -145,6 +146,18 @@ export async function listProjects(): Promise<ProjectListItem[]> {
   );
 
   return projects;
+}
+
+export async function readDashboard(): Promise<DashboardData> {
+  const projects = await listProjects();
+  return {
+    projects: await Promise.all(
+      projects.map(async (item) => ({
+        ...item,
+        tickets: await readTickets(item.folder),
+      })),
+    ),
+  };
 }
 
 export async function readProject(key: string) {

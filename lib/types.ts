@@ -30,6 +30,14 @@ export type ProjectListItem = {
   project: ProjectInfo;
 };
 
+export type DashboardProject = ProjectListItem & {
+  tickets: Ticket[];
+};
+
+export type DashboardData = {
+  projects: DashboardProject[];
+};
+
 export type TimelineEvent = {
   time: string;
   role: EventRole;
