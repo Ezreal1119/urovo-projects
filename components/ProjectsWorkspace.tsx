@@ -95,6 +95,7 @@ export default function ProjectsWorkspace() {
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
+  const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
 
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
 
@@ -167,9 +168,36 @@ export default function ProjectsWorkspace() {
     }
   }
 
+  function canDiscardTicketChanges() {
+    return !selectedTicketDirty || confirm("Discard unsaved ticket changes?");
+  }
+
+  function closeSelectedTicket() {
+    if (!canDiscardTicketChanges()) {
+      return;
+    }
+    setSelectedTicketId("");
+    setSelectedTicketDirty(false);
+  }
+
+  function selectTicket(ticketId: string) {
+    if (ticketId === selectedTicketId) {
+      return;
+    }
+    if (!canDiscardTicketChanges()) {
+      return;
+    }
+    setSelectedTicketId(ticketId);
+    setSelectedTicketDirty(false);
+  }
+
   async function loadProject(folder: string) {
+    if (!canDiscardTicketChanges()) {
+      return;
+    }
     setSelectedFolder(folder);
     setSelectedTicketId("");
+    setSelectedTicketDirty(false);
     setError("");
     try {
       const data = await api<{ project: ProjectInfo; tickets: Ticket[] }>(`${projectApiPath(folder)}/tickets`);
@@ -446,7 +474,7 @@ export default function ProjectsWorkspace() {
                       key={ticket.id}
                       ticket={ticket}
                       active={ticket.id === selectedTicketId}
-                      onClick={() => setSelectedTicketId(ticket.id)}
+                      onClick={() => selectTicket(ticket.id)}
                       isEditingNextAction={ticket.id === editingNextActionId}
                       nextActionDraft={nextActionDraft}
                       onStartNextActionEdit={() => startNextActionEdit(ticket)}
@@ -481,8 +509,9 @@ export default function ProjectsWorkspace() {
         <TicketDrawer
           ticket={selectedTicket}
           saving={saving}
-          onClose={() => setSelectedTicketId("")}
-          onSave={(draft) => void updateTicket(selectedTicket.id, draft)}
+          onClose={closeSelectedTicket}
+          onDirtyChange={setSelectedTicketDirty}
+          onSave={(draft) => updateTicket(selectedTicket.id, draft)}
           onDelete={() => void deleteTicket(selectedTicket.id)}
           onAddEvent={(draft) => void addEvent(selectedTicket.id, draft)}
           onUpdateEvent={(index, draft) => void updateEvent(selectedTicket.id, index, draft)}
@@ -701,6 +730,7 @@ function TicketDrawer({
   ticket,
   saving,
   onClose,
+  onDirtyChange,
   onSave,
   onDelete,
   onAddEvent,
@@ -710,12 +740,22 @@ function TicketDrawer({
   ticket: Ticket;
   saving: boolean;
   onClose: () => void;
-  onSave: (draft: TicketDraft) => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onSave: (draft: TicketDraft) => Promise<void>;
   onDelete: () => void;
   onAddEvent: (draft: EventDraft) => void;
   onUpdateEvent: (index: number, draft: EventDraft) => void;
   onDeleteEvent: (index: number) => void;
 }) {
+  useEffect(() => {
+    onDirtyChange(false);
+  }, [onDirtyChange, ticket.id]);
+
+  async function saveTicket(draft: TicketDraft) {
+    await onSave(draft);
+    onDirtyChange(false);
+  }
+
   return (
     <div className="fixed inset-0 z-30 flex justify-end bg-slate-950/20">
       <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
@@ -739,7 +779,8 @@ function TicketDrawer({
             saving={saving}
             submitLabel="Save changes"
             showNextAction={false}
-            onSubmit={onSave}
+            onDirtyChange={onDirtyChange}
+            onSubmit={saveTicket}
           />
           <div className="flex justify-end">
             <button
@@ -794,19 +835,29 @@ function TicketForm({
   saving,
   submitLabel,
   showNextAction = true,
+  onDirtyChange,
   onSubmit,
 }: {
   initial: TicketDraft;
   saving: boolean;
   submitLabel: string;
   showNextAction?: boolean;
-  onSubmit: (draft: TicketDraft) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSubmit: (draft: TicketDraft) => void | Promise<void>;
 }) {
   const [draft, setDraft] = useState<TicketDraft>(initial);
+  const [baseline, setBaseline] = useState<TicketDraft>(initial);
 
-  function submit(event: FormEvent) {
+  function updateDraft(nextDraft: TicketDraft) {
+    setDraft(nextDraft);
+    onDirtyChange?.(!ticketDraftsEqual(nextDraft, baseline, showNextAction));
+  }
+
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    onSubmit(draft);
+    await onSubmit(draft);
+    setBaseline(draft);
+    onDirtyChange?.(false);
   }
 
   return (
@@ -815,7 +866,7 @@ function TicketForm({
         <input
           required
           value={draft.title}
-          onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+          onChange={(event) => updateDraft({ ...draft, title: event.target.value })}
           className="form-input"
           placeholder="Describe the issue"
         />
@@ -824,7 +875,7 @@ function TicketForm({
         <Field label="Status">
           <select
             value={draft.status}
-            onChange={(event) => setDraft({ ...draft, status: event.target.value as TicketStatus })}
+            onChange={(event) => updateDraft({ ...draft, status: event.target.value as TicketStatus })}
             className="form-input"
           >
             {STATUSES.map((status) => (
@@ -837,7 +888,7 @@ function TicketForm({
         <Field label="Priority">
           <select
             value={draft.priority}
-            onChange={(event) => setDraft({ ...draft, priority: event.target.value as TicketPriority })}
+            onChange={(event) => updateDraft({ ...draft, priority: event.target.value as TicketPriority })}
             className="form-input"
           >
             {PRIORITIES.map((priority) => (
@@ -851,7 +902,7 @@ function TicketForm({
       <Field label="Summary">
         <textarea
           value={draft.summary}
-          onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
+          onChange={(event) => updateDraft({ ...draft, summary: event.target.value })}
           className="form-input min-h-28 resize-y"
           placeholder="Current issue context and investigation notes"
         />
@@ -860,7 +911,7 @@ function TicketForm({
         <Field label="Next action">
           <textarea
             value={draft.next_action}
-            onChange={(event) => setDraft({ ...draft, next_action: event.target.value })}
+            onChange={(event) => updateDraft({ ...draft, next_action: event.target.value })}
             className="form-input min-h-20 resize-y"
             placeholder="Owner, expected response, or next technical step"
           />
@@ -1066,6 +1117,16 @@ function ticketToDraft(ticket: Ticket): TicketDraft {
     summary: ticket.summary,
     next_action: ticket.next_action,
   };
+}
+
+function ticketDraftsEqual(left: TicketDraft, right: TicketDraft, includeNextAction: boolean) {
+  return (
+    left.title === right.title &&
+    left.status === right.status &&
+    left.priority === right.priority &&
+    left.summary === right.summary &&
+    (!includeNextAction || left.next_action === right.next_action)
+  );
 }
 
 function eventToDraft(event: TimelineEvent): EventDraft {
