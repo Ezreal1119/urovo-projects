@@ -121,6 +121,7 @@ export default function ProjectsWorkspace() {
   const [globalQuery, setGlobalQuery] = useState("");
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>("all");
   const [dashboardFilter, setDashboardFilter] = useState<DashboardFilter>("all");
+  const [dashboardTicketPage, setDashboardTicketPage] = useState(1);
   const [ticketPage, setTicketPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -208,16 +209,32 @@ export default function ProjectsWorkspace() {
     () => filterDashboardTickets(dashboardTickets, dashboardFilter, globalQuery),
     [dashboardTickets, dashboardFilter, globalQuery],
   );
+  const totalDashboardTicketPages = Math.max(1, Math.ceil(filteredDashboardTickets.length / TICKETS_PER_PAGE));
+  const visibleDashboardTicketPage = Math.min(dashboardTicketPage, totalDashboardTicketPages);
+  const paginatedDashboardTickets = filteredDashboardTickets.slice(
+    (visibleDashboardTicketPage - 1) * TICKETS_PER_PAGE,
+    visibleDashboardTicketPage * TICKETS_PER_PAGE,
+  );
 
   useEffect(() => {
     setTicketPage(1);
   }, [selectedFolder, globalQuery, ticketFilter]);
 
   useEffect(() => {
+    setDashboardTicketPage(1);
+  }, [dashboardFilter, globalQuery]);
+
+  useEffect(() => {
     if (ticketPage > totalTicketPages) {
       setTicketPage(totalTicketPages);
     }
   }, [ticketPage, totalTicketPages]);
+
+  useEffect(() => {
+    if (dashboardTicketPage > totalDashboardTicketPages) {
+      setDashboardTicketPage(totalDashboardTicketPages);
+    }
+  }, [dashboardTicketPage, totalDashboardTicketPages]);
 
   function applyTicketFilter(filter: TicketFilter) {
     setTicketFilter(filter);
@@ -534,11 +551,15 @@ export default function ProjectsWorkspace() {
           {viewMode === "dashboard" ? (
             <DashboardView
               data={dashboardData}
-              tickets={filteredDashboardTickets}
+              tickets={paginatedDashboardTickets}
+              ticketCount={filteredDashboardTickets.length}
+              page={visibleDashboardTicketPage}
+              totalPages={totalDashboardTicketPages}
               allTickets={dashboardTickets}
               activeFilter={dashboardFilter}
-              recentProjects={recentProjects}
               onFilterChange={setDashboardFilter}
+              onPreviousPage={() => setDashboardTicketPage((current) => Math.max(1, current - 1))}
+              onNextPage={() => setDashboardTicketPage((current) => Math.min(totalDashboardTicketPages, current + 1))}
               onOpenProject={(folder) => void loadProject(folder)}
               onOpenTicket={openDashboardTicket}
             />
@@ -676,19 +697,27 @@ function ProjectHeader({ project }: { project: ProjectInfo }) {
 function DashboardView({
   data,
   tickets,
+  ticketCount,
+  page,
+  totalPages,
   allTickets,
   activeFilter,
-  recentProjects,
   onFilterChange,
+  onPreviousPage,
+  onNextPage,
   onOpenProject,
   onOpenTicket,
 }: {
   data: DashboardData | null;
   tickets: DashboardTicket[];
+  ticketCount: number;
+  page: number;
+  totalPages: number;
   allTickets: DashboardTicket[];
   activeFilter: DashboardFilter;
-  recentProjects: RecentProject[];
   onFilterChange: (filter: DashboardFilter) => void;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
   onOpenProject: (folder: string) => void;
   onOpenTicket: (item: DashboardTicket) => void;
 }) {
@@ -700,7 +729,7 @@ function DashboardView({
       urgent: project.tickets.filter((ticket) => ticket.priority === "urgent").length,
     }))
     .sort((a, b) => b.active - a.active || b.urgent - a.urgent || a.project.project_name.localeCompare(b.project.project_name))
-    .slice(0, 5);
+    .slice(0, 6);
   const recentActivity = [...allTickets].sort((a, b) => b.ticket.updated_at.localeCompare(a.ticket.updated_at)).slice(0, 8);
 
   return (
@@ -714,15 +743,6 @@ function DashboardView({
             </p>
           </div>
         </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <DashboardMetric label="Total tickets" value={metrics.total} active={activeFilter === "all"} onClick={() => onFilterChange("all")} />
-        <DashboardMetric label="Active tickets" value={metrics.active} active={activeFilter === "active"} onClick={() => onFilterChange("active")} />
-        <DashboardMetric label="Pending internal" value={metrics.pendingInternal} active={activeFilter === "pending_internal"} onClick={() => onFilterChange("pending_internal")} />
-        <DashboardMetric label="Pending customer" value={metrics.pendingCustomer} active={activeFilter === "pending_customer"} onClick={() => onFilterChange("pending_customer")} />
-        <DashboardMetric label="Urgent" value={metrics.urgent} active={activeFilter === "urgent"} onClick={() => onFilterChange("urgent")} />
-        <DashboardMetric label="Resolved" value={metrics.resolved} active={activeFilter === "resolved"} onClick={() => onFilterChange("resolved")} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
@@ -816,13 +836,6 @@ function DashboardView({
               {topProjects.length === 0 ? <EmptyState text="No project data yet." /> : null}
             </div>
           </ChartPanel>
-          <ChartPanel title="Recently viewed projects">
-            <RecentProjectsList
-              recentProjects={recentProjects}
-              data={data}
-              onOpenProject={onOpenProject}
-            />
-          </ChartPanel>
         </div>
       </section>
 
@@ -832,8 +845,16 @@ function DashboardView({
             {tickets.map((item) => (
               <DashboardTicketRow key={`${item.folder}-${item.ticket.id}`} item={item} onClick={() => onOpenTicket(item)} />
             ))}
-            {tickets.length === 0 ? <EmptyState text="No tickets match this dashboard filter." /> : null}
+            {ticketCount === 0 ? <EmptyState text="No tickets match this dashboard filter." /> : null}
           </div>
+          {ticketCount > TICKETS_PER_PAGE ? (
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              onPrevious={onPreviousPage}
+              onNext={onNextPage}
+            />
+          ) : null}
         </ChartPanel>
         <ChartPanel title="Recent activity">
           <div className="space-y-2">
@@ -858,31 +879,6 @@ function DashboardView({
         </ChartPanel>
       </section>
     </div>
-  );
-}
-
-function DashboardMetric({
-  label,
-  value,
-  active,
-  onClick,
-}: {
-  label: string;
-  value: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
-        active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
-      }`}
-    >
-      <div className="text-2xl font-semibold text-slate-950">{value}</div>
-      <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{label}</div>
-    </button>
   );
 }
 
@@ -974,51 +970,6 @@ function PieChart({
           No ticket data for this chart.
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function RecentProjectsList({
-  recentProjects,
-  data,
-  onOpenProject,
-}: {
-  recentProjects: RecentProject[];
-  data: DashboardData | null;
-  onOpenProject: (folder: string) => void;
-}) {
-  if (recentProjects.length === 0) {
-    return <EmptyState text="Open projects to build your recent list." />;
-  }
-
-  return (
-    <div className="space-y-2">
-      {recentProjects.map((recent) => {
-        const project = data?.projects.find((item) => item.folder === recent.folder);
-        const tickets = project?.tickets ?? [];
-        return (
-          <button
-            key={recent.folder}
-            type="button"
-            onClick={() => onOpenProject(recent.folder)}
-            className="w-full rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-950">
-                  {project?.project.project_name ?? recent.projectName}
-                </div>
-                <div className="mt-1 text-xs text-slate-500">{recent.folder}</div>
-              </div>
-              <div className="shrink-0 text-right text-xs text-slate-500">
-                <div>{tickets.filter((ticket) => ticket.status !== "resolved").length} active</div>
-                <div>{tickets.filter((ticket) => ticket.priority === "urgent").length} urgent</div>
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-slate-400">Viewed {formatDateTimeFull(recent.viewedAt)}</div>
-          </button>
-        );
-      })}
     </div>
   );
 }
