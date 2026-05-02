@@ -2171,7 +2171,7 @@ function RequirementDrawer({
           {requirement.related_tickets.length > 0 ? (
             <section>
               <h3 className="mb-2 text-sm font-semibold">Related tickets</h3>
-              <RelatedTicketChips
+              <RelatedTicketRows
                 ticketIds={requirement.related_tickets}
                 tickets={tickets}
                 onOpenTicket={onOpenTicket}
@@ -2891,6 +2891,58 @@ function RelatedTicketChips({
       })}
     </div>
   );
+}
+
+function RelatedTicketRows({
+  ticketIds,
+  tickets,
+  onOpenTicket,
+}: {
+  ticketIds: string[];
+  tickets: Ticket[];
+  onOpenTicket: (ticketId: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {ticketIds.map((ticketId) => {
+        const ticket = tickets.find((current) => current.id === ticketId);
+        const exists = Boolean(ticket);
+        return (
+          <button
+            key={ticketId}
+            type="button"
+            disabled={!exists}
+            onClick={() => onOpenTicket(ticketId)}
+            className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+              exists
+                ? `${relatedTicketRowStyle(ticket)} hover:border-slate-300`
+                : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+            }`}
+          >
+            <div className="line-clamp-2 text-sm font-semibold">
+              [{ticketId}]: {ticket?.title ?? "Ticket not found"}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function relatedTicketRowStyle(ticket: Ticket | undefined) {
+  if (!ticket) {
+    return "border-slate-200 bg-slate-50 text-slate-400";
+  }
+  if (ticket.priority === "urgent") {
+    return "border-red-200 bg-red-50 text-red-900";
+  }
+  if (ticket.status === "resolved") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  }
+  if (ticket.status === "pending_customer") {
+    return "border-sky-200 bg-sky-50 text-sky-900";
+  }
+  return "border-amber-200 bg-amber-50 text-amber-950";
 }
 
 function RequirementStatusBadge({ status }: { status: RequirementStatus }) {
