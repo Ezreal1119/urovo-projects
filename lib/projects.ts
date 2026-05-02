@@ -9,6 +9,11 @@ import {
   PROJECT_PREFIX,
   ProjectInfo,
   ProjectListItem,
+  Requirement,
+  RequirementInput,
+  REQUIREMENT_STATUSES,
+  RequirementTimelineInput,
+  RequirementTimelineItem,
   STATUSES,
   Ticket,
   TicketInput,
@@ -181,6 +186,63 @@ export async function writeTickets(key: string, tickets: Ticket[]) {
   await writeJsonAtomic(path.join(projectDir(key), "tickets.json"), tickets);
 }
 
+export async function readRequirements(key: string): Promise<Requirement[]> {
+  await readProject(key);
+  const requirements = await readJson<Requirement[]>(path.join(projectDir(key), "requirements.json"), []);
+  return Array.isArray(requirements) ? requirements.map(normalizeRequirement).sort(sortRequirements) : [];
+}
+
+export async function writeRequirements(key: string, requirements: Requirement[]) {
+  await readProject(key);
+  await writeJsonAtomic(path.join(projectDir(key), "requirements.json"), requirements);
+}
+
+export function createRequirementPayload(input: RequirementInput, existing: Requirement[]): Requirement {
+  const now = beijingNowIsoString();
+  return normalizeRequirement({
+    id: nextRequirementId(existing),
+    title: cleanText(input.title) || "Untitled requirement",
+    status: pickValue(input.status, REQUIREMENT_STATUSES, "in_progress"),
+    details: cleanText(input.details),
+    timeline: normalizeRequirementTimeline(input.timeline),
+    related_tickets: normalizeRelatedTickets(input.related_tickets),
+    created_at: now,
+    last_updated: now,
+  });
+}
+
+export function updateRequirementPayload(existing: Requirement, input: RequirementInput): Requirement {
+  return normalizeRequirement({
+    ...existing,
+    title: input.title === undefined ? existing.title : cleanText(input.title) || existing.title,
+    status:
+      input.status === undefined
+        ? pickValue(existing.status, REQUIREMENT_STATUSES, "in_progress")
+        : pickValue(input.status, REQUIREMENT_STATUSES, pickValue(existing.status, REQUIREMENT_STATUSES, "in_progress")),
+    details: input.details === undefined ? existing.details : cleanText(input.details),
+    timeline: input.timeline ? normalizeRequirementTimeline(input.timeline) : existing.timeline,
+    related_tickets: input.related_tickets ? normalizeRelatedTickets(input.related_tickets) : existing.related_tickets,
+    last_updated: beijingNowIsoString(),
+  });
+}
+
+export function createRequirementTimelinePayload(input: RequirementTimelineInput): RequirementTimelineItem {
+  return normalizeRequirementTimelineItem({
+    time: cleanText(input.time) || beijingNowIsoString(),
+    remark: cleanText(input.remark),
+  });
+}
+
+export function updateRequirementTimelinePayload(
+  existing: RequirementTimelineItem,
+  input: RequirementTimelineInput,
+): RequirementTimelineItem {
+  return normalizeRequirementTimelineItem({
+    time: cleanText(input.time) || existing.time,
+    remark: cleanText(input.remark),
+  });
+}
+
 export function createTicketPayload(input: TicketInput, existing: Ticket[], projectName: string): Ticket {
   const now = beijingNowIsoString();
   return normalizeTicket({
@@ -233,6 +295,14 @@ export function sortEvents(a: TimelineEvent, b: TimelineEvent) {
   return a.time.localeCompare(b.time);
 }
 
+export function sortRequirements(a: Requirement, b: Requirement) {
+  return b.last_updated.localeCompare(a.last_updated);
+}
+
+export function sortRequirementTimeline(a: RequirementTimelineItem, b: RequirementTimelineItem) {
+  return a.time.localeCompare(b.time);
+}
+
 function normalizeTicket(ticket: Ticket): Ticket {
   const now = beijingNowIsoString();
   return {
@@ -260,6 +330,37 @@ function normalizeEvent(event: Partial<TimelineEvent>): TimelineEvent {
   };
 }
 
+function normalizeRequirement(requirement: Partial<Requirement>): Requirement {
+  const now = beijingNowIsoString();
+  return {
+    id: cleanText(requirement.id) || "REQ-001",
+    title: cleanText(requirement.title) || "Untitled requirement",
+    status: pickValue(requirement.status, REQUIREMENT_STATUSES, "in_progress"),
+    details: cleanText(requirement.details),
+    timeline: normalizeRequirementTimeline(requirement.timeline),
+    related_tickets: normalizeRelatedTickets(requirement.related_tickets),
+    created_at: cleanText(requirement.created_at) || now,
+    last_updated: cleanText(requirement.last_updated) || now,
+  };
+}
+
+function normalizeRequirementTimeline(timeline: unknown): RequirementTimelineItem[] {
+  return Array.isArray(timeline) ? timeline.map(normalizeRequirementTimelineItem).sort(sortRequirementTimeline) : [];
+}
+
+function normalizeRequirementTimelineItem(item: Partial<RequirementTimelineItem>): RequirementTimelineItem {
+  return {
+    time: cleanText(item.time) || beijingNowIsoString(),
+    remark: cleanText(item.remark),
+  };
+}
+
+function normalizeRelatedTickets(relatedTickets: unknown): string[] {
+  return Array.isArray(relatedTickets)
+    ? Array.from(new Set(relatedTickets.map(cleanText).filter(Boolean)))
+    : [];
+}
+
 function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -276,6 +377,14 @@ function nextTicketId(existing: Ticket[], projectName: string) {
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
   return `${prefix}-${String(highest + 1).padStart(3, "0")}`;
+}
+
+function nextRequirementId(existing: Requirement[]) {
+  const highest = existing.reduce((max, requirement) => {
+    const match = requirement.id.match(/^REQ-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `REQ-${String(highest + 1).padStart(3, "0")}`;
 }
 
 function ticketPrefix(projectName: string) {

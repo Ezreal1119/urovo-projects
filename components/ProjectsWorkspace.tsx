@@ -10,6 +10,10 @@ import {
   PRIORITIES,
   ProjectInfo,
   ProjectListItem,
+  Requirement,
+  RequirementStatus,
+  RequirementTimelineItem,
+  REQUIREMENT_STATUSES,
   STATUSES,
   Ticket,
   TicketPriority,
@@ -31,12 +35,25 @@ type EventDraft = {
   content: string;
 };
 
+type RequirementDraft = {
+  title: string;
+  status: RequirementStatus;
+  details: string;
+  related_tickets: string[];
+};
+
+type RequirementTimelineDraft = {
+  time: string;
+  remark: string;
+};
+
 type ProjectGroup = {
   country: string;
   projects: ProjectListItem[];
 };
 
 type ViewMode = "dashboard" | "project";
+type ProjectMode = "tickets" | "requirements";
 
 type TicketFilter = "all" | "active" | "pending_internal" | "urgent";
 
@@ -80,6 +97,18 @@ const emptyEventDraft: EventDraft = {
   content: "",
 };
 
+const emptyRequirementDraft: RequirementDraft = {
+  title: "",
+  status: "in_progress",
+  details: "",
+  related_tickets: [],
+};
+
+const emptyRequirementTimelineDraft: RequirementTimelineDraft = {
+  time: todayDate(),
+  remark: "",
+};
+
 const statusLabels: Record<TicketStatus, string> = {
   pending_internal: "[Pending]: Internal",
   pending_customer: "[Pending]: Customer",
@@ -91,6 +120,13 @@ const priorityLabels: Record<TicketPriority, string> = {
   medium: "Medium",
   high: "High",
   urgent: "Urgent",
+};
+
+const requirementStatusLabels: Record<RequirementStatus, string> = {
+  pending: "Pending",
+  in_progress: "In Progress",
+  testing: "Testing",
+  finished: "Finished",
 };
 
 const eventRoleLabels: Record<EventRole, string> = {
@@ -111,29 +147,46 @@ const eventRoleStyles: Record<EventRole, string> = {
 
 export default function ProjectsWorkspace() {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
+  const [projectMode, setProjectMode] = useState<ProjectMode>("tickets");
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
-  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(
+    null,
+  );
   const [selectedFolder, setSelectedFolder] = useState("");
-  const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
+  const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(
+    null,
+  );
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState("");
+  const [selectedRequirementId, setSelectedRequirementId] = useState("");
   const [projectQuery, setProjectQuery] = useState("");
   const [globalQuery, setGlobalQuery] = useState("");
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>("all");
-  const [dashboardFilter, setDashboardFilter] = useState<DashboardFilter>("all");
+  const [dashboardFilter, setDashboardFilter] =
+    useState<DashboardFilter>("all");
   const [dashboardTicketPage, setDashboardTicketPage] = useState(1);
   const [ticketPage, setTicketPage] = useState(1);
+  const [requirementPage, setRequirementPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [showNewRequirement, setShowNewRequirement] = useState(false);
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
   const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
+  const [selectedRequirementDirty, setSelectedRequirementDirty] =
+    useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
-  const selectedTicket = tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
+  const selectedTicket =
+    tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
+  const selectedRequirement =
+    requirements.find(
+      (requirement) => requirement.id === selectedRequirementId,
+    ) ?? null;
 
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLowerCase();
@@ -160,7 +213,9 @@ export default function ProjectsWorkspace() {
 
     return Array.from(groups, ([country, groupProjects]) => ({
       country,
-      projects: groupProjects.sort((a, b) => a.project.project_name.localeCompare(b.project.project_name)),
+      projects: groupProjects.sort((a, b) =>
+        a.project.project_name.localeCompare(b.project.project_name),
+      ),
     })).sort((a, b) => a.country.localeCompare(b.country));
   }, [filteredProjects]);
 
@@ -169,8 +224,10 @@ export default function ProjectsWorkspace() {
     return tickets.filter((ticket) => {
       const matchesDashboardFilter =
         ticketFilter === "all" ||
-        (ticketFilter === "active" && ["pending_internal", "pending_customer"].includes(ticket.status)) ||
-        (ticketFilter === "pending_internal" && ticket.status === "pending_internal") ||
+        (ticketFilter === "active" &&
+          ["pending_internal", "pending_customer"].includes(ticket.status)) ||
+        (ticketFilter === "pending_internal" &&
+          ticket.status === "pending_internal") ||
         (ticketFilter === "urgent" && ticket.priority === "urgent");
 
       if (!matchesDashboardFilter) {
@@ -181,36 +238,91 @@ export default function ProjectsWorkspace() {
         return true;
       }
 
-      return [ticket.id, ticket.title, ticket.summary, ticket.next_action, ticket.status, ticket.priority]
+      return [
+        ticket.id,
+        ticket.title,
+        ticket.summary,
+        ticket.next_action,
+        ticket.status,
+        ticket.priority,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query);
     });
   }, [tickets, globalQuery, ticketFilter]);
 
+  const filteredRequirements = useMemo(() => {
+    const query = globalQuery.trim().toLowerCase();
+    if (!query) {
+      return requirements;
+    }
+    return requirements.filter((requirement) =>
+      [
+        requirement.id,
+        requirement.title,
+        requirement.details,
+        requirement.status,
+        requirementStatusLabels[requirement.status],
+        ...requirement.related_tickets,
+        ...requirement.timeline.map((item) => `${item.time} ${item.remark}`),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [requirements, globalQuery]);
+
   const metrics = useMemo(() => {
     return {
       total: tickets.length,
       active: tickets.filter((ticket) => ticket.status !== "resolved").length,
-      pendingInternal: tickets.filter((ticket) => ticket.status === "pending_internal").length,
+      pendingInternal: tickets.filter(
+        (ticket) => ticket.status === "pending_internal",
+      ).length,
       urgent: tickets.filter((ticket) => ticket.priority === "urgent").length,
     };
   }, [tickets]);
 
-  const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / TICKETS_PER_PAGE));
+  const totalTicketPages = Math.max(
+    1,
+    Math.ceil(filteredTickets.length / TICKETS_PER_PAGE),
+  );
   const visibleTicketPage = Math.min(ticketPage, totalTicketPages);
   const paginatedTickets = filteredTickets.slice(
     (visibleTicketPage - 1) * TICKETS_PER_PAGE,
     visibleTicketPage * TICKETS_PER_PAGE,
   );
+  const totalRequirementPages = Math.max(
+    1,
+    Math.ceil(filteredRequirements.length / TICKETS_PER_PAGE),
+  );
+  const visibleRequirementPage = Math.min(
+    requirementPage,
+    totalRequirementPages,
+  );
+  const paginatedRequirements = filteredRequirements.slice(
+    (visibleRequirementPage - 1) * TICKETS_PER_PAGE,
+    visibleRequirementPage * TICKETS_PER_PAGE,
+  );
 
-  const dashboardTickets = useMemo(() => flattenDashboardTickets(dashboardData), [dashboardData]);
+  const dashboardTickets = useMemo(
+    () => flattenDashboardTickets(dashboardData),
+    [dashboardData],
+  );
   const filteredDashboardTickets = useMemo(
-    () => filterDashboardTickets(dashboardTickets, dashboardFilter, globalQuery),
+    () =>
+      filterDashboardTickets(dashboardTickets, dashboardFilter, globalQuery),
     [dashboardTickets, dashboardFilter, globalQuery],
   );
-  const totalDashboardTicketPages = Math.max(1, Math.ceil(filteredDashboardTickets.length / TICKETS_PER_PAGE));
-  const visibleDashboardTicketPage = Math.min(dashboardTicketPage, totalDashboardTicketPages);
+  const totalDashboardTicketPages = Math.max(
+    1,
+    Math.ceil(filteredDashboardTickets.length / TICKETS_PER_PAGE),
+  );
+  const visibleDashboardTicketPage = Math.min(
+    dashboardTicketPage,
+    totalDashboardTicketPages,
+  );
   const paginatedDashboardTickets = filteredDashboardTickets.slice(
     (visibleDashboardTicketPage - 1) * TICKETS_PER_PAGE,
     visibleDashboardTicketPage * TICKETS_PER_PAGE,
@@ -221,6 +333,10 @@ export default function ProjectsWorkspace() {
   }, [selectedFolder, globalQuery, ticketFilter]);
 
   useEffect(() => {
+    setRequirementPage(1);
+  }, [selectedFolder, requirements.length, globalQuery]);
+
+  useEffect(() => {
     setDashboardTicketPage(1);
   }, [dashboardFilter, globalQuery]);
 
@@ -229,6 +345,12 @@ export default function ProjectsWorkspace() {
       setTicketPage(totalTicketPages);
     }
   }, [ticketPage, totalTicketPages]);
+
+  useEffect(() => {
+    if (requirementPage > totalRequirementPages) {
+      setRequirementPage(totalRequirementPages);
+    }
+  }, [requirementPage, totalRequirementPages]);
 
   useEffect(() => {
     if (dashboardTicketPage > totalDashboardTicketPages) {
@@ -248,6 +370,17 @@ export default function ProjectsWorkspace() {
     return !selectedTicketDirty || confirm("Discard unsaved ticket changes?");
   }
 
+  function canDiscardRequirementChanges() {
+    return (
+      !selectedRequirementDirty ||
+      confirm("Discard unsaved requirement changes?")
+    );
+  }
+
+  function canLeaveProjectWork() {
+    return canDiscardTicketChanges() && canDiscardRequirementChanges();
+  }
+
   function closeSelectedTicket() {
     if (!canDiscardTicketChanges()) {
       return;
@@ -256,13 +389,23 @@ export default function ProjectsWorkspace() {
     setSelectedTicketDirty(false);
   }
 
+  function closeSelectedRequirement() {
+    if (!canDiscardRequirementChanges()) {
+      return;
+    }
+    setSelectedRequirementId("");
+    setSelectedRequirementDirty(false);
+  }
+
   function openDashboard() {
-    if (!canDiscardTicketChanges()) {
+    if (!canLeaveProjectWork()) {
       return;
     }
     setViewMode("dashboard");
     setSelectedTicketId("");
     setSelectedTicketDirty(false);
+    setSelectedRequirementId("");
+    setSelectedRequirementDirty(false);
   }
 
   function selectTicket(ticketId: string) {
@@ -276,36 +419,78 @@ export default function ProjectsWorkspace() {
     setSelectedTicketDirty(false);
   }
 
-  async function loadProject(folder: string, options: { ticketId?: string } = {}) {
-    if (!canDiscardTicketChanges()) {
+  function selectRequirement(requirementId: string) {
+    if (requirementId === selectedRequirementId) {
+      return;
+    }
+    if (!canDiscardRequirementChanges()) {
+      return;
+    }
+    setSelectedRequirementId(requirementId);
+    setSelectedRequirementDirty(false);
+  }
+
+  async function loadProject(
+    folder: string,
+    options: { ticketId?: string } = {},
+  ) {
+    if (!canLeaveProjectWork()) {
       return;
     }
     setSelectedFolder(folder);
     setSelectedTicketId("");
+    setSelectedRequirementId("");
     setSelectedTicketDirty(false);
+    setSelectedRequirementDirty(false);
+    setProjectMode("tickets");
     setViewMode("project");
     setError("");
     try {
-      const data = await api<{ project: ProjectInfo; tickets: Ticket[] }>(`${projectApiPath(folder)}/tickets`);
+      const data = await api<{ project: ProjectInfo; tickets: Ticket[] }>(
+        `${projectApiPath(folder)}/tickets`,
+      );
       setSelectedProject(data.project);
       setTickets(data.tickets);
+      const requirementsData = await api<{ requirements: Requirement[] }>(
+        `${projectApiPath(folder)}/requirements`,
+      );
+      setRequirements(requirementsData.requirements);
       setSelectedTicketId(options.ticketId ?? "");
       rememberRecentProject(folder, data.project.project_name);
     } catch (requestError) {
       setError((requestError as Error).message);
       setSelectedProject(null);
       setTickets([]);
+      setRequirements([]);
     }
+  }
+
+  function switchProjectMode(mode: ProjectMode) {
+    if (mode === projectMode) {
+      return;
+    }
+    if (!canLeaveProjectWork()) {
+      return;
+    }
+    setProjectMode(mode);
+    setSelectedTicketId("");
+    setSelectedRequirementId("");
+    setSelectedTicketDirty(false);
+    setSelectedRequirementDirty(false);
   }
 
   async function refreshDashboard() {
     const data = await api<DashboardData>("/api/dashboard");
     setDashboardData(data);
-    setProjects(data.projects.map(({ folder, project }) => ({ folder, project })));
+    setProjects(
+      data.projects.map(({ folder, project }) => ({ folder, project })),
+    );
   }
 
   function refreshDashboardQuietly() {
-    void refreshDashboard().catch((requestError) => setError((requestError as Error).message));
+    void refreshDashboard().catch((requestError) =>
+      setError((requestError as Error).message),
+    );
   }
 
   function rememberRecentProject(folder: string, projectName: string) {
@@ -314,7 +499,10 @@ export default function ProjectsWorkspace() {
       ...recentProjects.filter((project) => project.folder !== folder),
     ].slice(0, 5);
     setRecentProjects(nextRecent);
-    window.localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(nextRecent));
+    window.localStorage.setItem(
+      RECENT_PROJECTS_KEY,
+      JSON.stringify(nextRecent),
+    );
   }
 
   function openDashboardTicket(item: DashboardTicket) {
@@ -334,7 +522,9 @@ export default function ProjectsWorkspace() {
           return;
         }
         setDashboardData(data);
-        setProjects(data.projects.map(({ folder, project }) => ({ folder, project })));
+        setProjects(
+          data.projects.map(({ folder, project }) => ({ folder, project })),
+        );
         setRecentProjects(storedRecent);
       } catch (requestError) {
         if (!cancelled) {
@@ -360,10 +550,13 @@ export default function ProjectsWorkspace() {
     }
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket }>(`${projectApiPath(selectedFolder)}/tickets`, {
-        method: "POST",
-        body: JSON.stringify(draft),
-      });
+      const data = await api<{ ticket: Ticket }>(
+        `${projectApiPath(selectedFolder)}/tickets`,
+        {
+          method: "POST",
+          body: JSON.stringify(draft),
+        },
+      );
       setTickets((current) => [data.ticket, ...current]);
       setTicketPage(1);
       setSelectedTicketId(data.ticket.id);
@@ -374,14 +567,25 @@ export default function ProjectsWorkspace() {
     }
   }
 
-  async function updateTicket(ticketId: string, draft: TicketDraft, options: { showSuccessToast?: boolean } = {}) {
+  async function updateTicket(
+    ticketId: string,
+    draft: TicketDraft,
+    options: { showSuccessToast?: boolean } = {},
+  ) {
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket }>(`${projectApiPath(selectedFolder)}/tickets/${ticketId}`, {
-        method: "PUT",
-        body: JSON.stringify(draft),
-      });
-      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+      const data = await api<{ ticket: Ticket }>(
+        `${projectApiPath(selectedFolder)}/tickets/${ticketId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(draft),
+        },
+      );
+      setTickets((current) =>
+        current.map((ticket) =>
+          ticket.id === ticketId ? data.ticket : ticket,
+        ),
+      );
       refreshDashboardQuietly();
       if (options.showSuccessToast ?? true) {
         showToast("Ticket changes saved.");
@@ -397,10 +601,14 @@ export default function ProjectsWorkspace() {
   }
 
   async function saveNextAction(ticket: Ticket) {
-    await updateTicket(ticket.id, {
-      ...ticketToDraft(ticket),
-      next_action: nextActionDraft,
-    }, { showSuccessToast: false });
+    await updateTicket(
+      ticket.id,
+      {
+        ...ticketToDraft(ticket),
+        next_action: nextActionDraft,
+      },
+      { showSuccessToast: false },
+    );
     setEditingNextActionId("");
     setNextActionDraft("");
   }
@@ -416,8 +624,12 @@ export default function ProjectsWorkspace() {
     }
     setSaving(true);
     try {
-      await api(`${projectApiPath(selectedFolder)}/tickets/${ticketId}`, { method: "DELETE" });
-      setTickets((current) => current.filter((ticket) => ticket.id !== ticketId));
+      await api(`${projectApiPath(selectedFolder)}/tickets/${ticketId}`, {
+        method: "DELETE",
+      });
+      setTickets((current) =>
+        current.filter((ticket) => ticket.id !== ticketId),
+      );
       setSelectedTicketId("");
       refreshDashboardQuietly();
     } finally {
@@ -435,14 +647,22 @@ export default function ProjectsWorkspace() {
           body: JSON.stringify(eventDraftForApi(draft)),
         },
       );
-      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+      setTickets((current) =>
+        current.map((ticket) =>
+          ticket.id === ticketId ? data.ticket : ticket,
+        ),
+      );
       refreshDashboardQuietly();
     } finally {
       setSaving(false);
     }
   }
 
-  async function updateEvent(ticketId: string, index: number, draft: EventDraft) {
+  async function updateEvent(
+    ticketId: string,
+    index: number,
+    draft: EventDraft,
+  ) {
     setSaving(true);
     try {
       const data = await api<{ ticket: Ticket }>(
@@ -452,7 +672,11 @@ export default function ProjectsWorkspace() {
           body: JSON.stringify(eventDraftForApi(draft)),
         },
       );
-      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+      setTickets((current) =>
+        current.map((ticket) =>
+          ticket.id === ticketId ? data.ticket : ticket,
+        ),
+      );
       refreshDashboardQuietly();
     } finally {
       setSaving(false);
@@ -466,11 +690,165 @@ export default function ProjectsWorkspace() {
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events/${index}`,
         { method: "DELETE" },
       );
-      setTickets((current) => current.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
+      setTickets((current) =>
+        current.map((ticket) =>
+          ticket.id === ticketId ? data.ticket : ticket,
+        ),
+      );
       refreshDashboardQuietly();
     } finally {
       setSaving(false);
     }
+  }
+
+  async function createRequirement(draft: RequirementDraft) {
+    if (!selectedFolder) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: Requirement }>(
+        `${projectApiPath(selectedFolder)}/requirements`,
+        {
+          method: "POST",
+          body: JSON.stringify(requirementDraftForApi(draft)),
+        },
+      );
+      setRequirements((current) => [data.requirement, ...current]);
+      setRequirementPage(1);
+      setSelectedRequirementId(data.requirement.id);
+      setShowNewRequirement(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateRequirement(
+    requirementId: string,
+    draft: RequirementDraft,
+  ) {
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: Requirement }>(
+        `${projectApiPath(selectedFolder)}/requirements/${requirementId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(requirementDraftForApi(draft)),
+        },
+      );
+      setRequirements((current) =>
+        current.map((requirement) =>
+          requirement.id === requirementId ? data.requirement : requirement,
+        ),
+      );
+      showToast("Requirement changes saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteRequirement(requirementId: string) {
+    if (
+      !confirm(
+        "Delete this requirement? This writes directly to requirements.json.",
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await api(
+        `${projectApiPath(selectedFolder)}/requirements/${requirementId}`,
+        { method: "DELETE" },
+      );
+      setRequirements((current) =>
+        current.filter((requirement) => requirement.id !== requirementId),
+      );
+      setSelectedRequirementId("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addRequirementTimeline(
+    requirementId: string,
+    draft: RequirementTimelineDraft,
+  ) {
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: Requirement }>(
+        `${projectApiPath(selectedFolder)}/requirements/${requirementId}/timeline`,
+        {
+          method: "POST",
+          body: JSON.stringify(requirementTimelineDraftForApi(draft)),
+        },
+      );
+      setRequirements((current) =>
+        current.map((requirement) =>
+          requirement.id === requirementId ? data.requirement : requirement,
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateRequirementTimeline(
+    requirementId: string,
+    index: number,
+    draft: RequirementTimelineDraft,
+  ) {
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: Requirement }>(
+        `${projectApiPath(selectedFolder)}/requirements/${requirementId}/timeline/${index}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(requirementTimelineDraftForApi(draft)),
+        },
+      );
+      setRequirements((current) =>
+        current.map((requirement) =>
+          requirement.id === requirementId ? data.requirement : requirement,
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteRequirementTimeline(
+    requirementId: string,
+    index: number,
+  ) {
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: Requirement }>(
+        `${projectApiPath(selectedFolder)}/requirements/${requirementId}/timeline/${index}`,
+        { method: "DELETE" },
+      );
+      setRequirements((current) =>
+        current.map((requirement) =>
+          requirement.id === requirementId ? data.requirement : requirement,
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openRelatedTicket(ticketId: string) {
+    const ticket = tickets.find((current) => current.id === ticketId);
+    if (!ticket) {
+      return;
+    }
+    if (!canDiscardRequirementChanges()) {
+      return;
+    }
+    setProjectMode("tickets");
+    setSelectedRequirementId("");
+    setSelectedRequirementDirty(false);
+    setSelectedTicketId(ticket.id);
   }
 
   return (
@@ -491,32 +869,54 @@ export default function ProjectsWorkspace() {
             priority
           />
           <div className="min-w-0">
-            <div className="text-lg font-semibold tracking-tight text-slate-950">Urovo Projects</div>
+            <div className="text-lg font-semibold tracking-tight text-slate-950">
+              Urovo Projects
+            </div>
           </div>
         </button>
         <label className="relative hidden w-full max-w-md md:block">
-          <span className="sr-only">Search tickets</span>
+          <span className="sr-only">
+            {viewMode === "dashboard"
+              ? "Search all tickets"
+              : projectMode === "requirements"
+                ? "Search requirements"
+                : "Search tickets"}
+          </span>
           <input
             value={globalQuery}
             onChange={(event) => setGlobalQuery(event.target.value)}
             className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-            placeholder={viewMode === "dashboard" ? "Search all tickets" : "Search tickets"}
+            placeholder={
+              viewMode === "dashboard"
+                ? "Search all tickets"
+                : projectMode === "requirements"
+                  ? "Search requirements"
+                  : "Search tickets"
+            }
           />
         </label>
         <button
-          onClick={() => setShowNewTicket(true)}
+          onClick={() =>
+            projectMode === "requirements"
+              ? setShowNewRequirement(true)
+              : setShowNewTicket(true)
+          }
           disabled={viewMode !== "project" || !selectedFolder}
           className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          New Ticket
+          {projectMode === "requirements" ? "New Requirement" : "New Ticket"}
         </button>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="border-b border-slate-200 bg-white p-4 lg:border-b-0 lg:border-r">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Projects</h2>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-500">{projects.length}</span>
+            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Projects
+            </h2>
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-500">
+              {projects.length}
+            </span>
           </div>
           <input
             value={projectQuery}
@@ -558,91 +958,140 @@ export default function ProjectsWorkspace() {
               allTickets={dashboardTickets}
               activeFilter={dashboardFilter}
               onFilterChange={setDashboardFilter}
-              onPreviousPage={() => setDashboardTicketPage((current) => Math.max(1, current - 1))}
-              onNextPage={() => setDashboardTicketPage((current) => Math.min(totalDashboardTicketPages, current + 1))}
+              onPreviousPage={() =>
+                setDashboardTicketPage((current) => Math.max(1, current - 1))
+              }
+              onNextPage={() =>
+                setDashboardTicketPage((current) =>
+                  Math.min(totalDashboardTicketPages, current + 1),
+                )
+              }
               onOpenProject={(folder) => void loadProject(folder)}
               onOpenTicket={openDashboardTicket}
             />
           ) : selectedProject ? (
             <>
-              <ProjectHeader project={selectedProject} />
-              <section className="mt-5 grid gap-3 md:grid-cols-4">
-                <Metric
-                  label="Total tickets"
-                  value={metrics.total}
-                  active={ticketFilter === "all" && !globalQuery}
-                  onClick={() => applyTicketFilter("all")}
-                />
-                <Metric
-                  label="Active tickets"
-                  value={metrics.active}
-                  active={ticketFilter === "active"}
-                  onClick={() => applyTicketFilter("active")}
-                />
-                <Metric
-                  label="Pending internal"
-                  value={metrics.pendingInternal}
-                  active={ticketFilter === "pending_internal"}
-                  onClick={() => applyTicketFilter("pending_internal")}
-                />
-                <Metric
-                  label="Urgent"
-                  value={metrics.urgent}
-                  active={ticketFilter === "urgent"}
-                  onClick={() => applyTicketFilter("urgent")}
-                />
-              </section>
-
-              <section className="mt-6">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-slate-900">Ticket Dashboard</h2>
-                  <span className="text-xs text-slate-500">
-                    {filteredTickets.length === 0
-                      ? "0 shown"
-                      : `${(visibleTicketPage - 1) * TICKETS_PER_PAGE + 1}-${Math.min(
-                          visibleTicketPage * TICKETS_PER_PAGE,
-                          filteredTickets.length,
-                        )} of ${filteredTickets.length} shown`}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {paginatedTickets.map((ticket) => (
-                    <TicketCard
-                      key={ticket.id}
-                      ticket={ticket}
-                      active={ticket.id === selectedTicketId}
-                      onClick={() => selectTicket(ticket.id)}
-                      isEditingNextAction={ticket.id === editingNextActionId}
-                      nextActionDraft={nextActionDraft}
-                      onStartNextActionEdit={() => startNextActionEdit(ticket)}
-                      onNextActionDraftChange={setNextActionDraft}
-                      onSaveNextAction={() => void saveNextAction(ticket)}
+              <ProjectHeader
+                project={selectedProject}
+                mode={projectMode}
+                onModeChange={switchProjectMode}
+              />
+              {projectMode === "tickets" ? (
+                <>
+                  <section className="mt-5 grid gap-3 md:grid-cols-4">
+                    <Metric
+                      label="Total tickets"
+                      value={metrics.total}
+                      active={ticketFilter === "all" && !globalQuery}
+                      onClick={() => applyTicketFilter("all")}
                     />
-                  ))}
-                </div>
-                {filteredTickets.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
-                    <div className="text-sm font-medium text-slate-900">No tickets to show</div>
-                    <p className="mt-1 text-sm text-slate-500">Create a ticket or adjust the search filter.</p>
-                  </div>
-                ) : null}
-                {filteredTickets.length > TICKETS_PER_PAGE ? (
-                  <Pagination
-                    page={visibleTicketPage}
-                    totalPages={totalTicketPages}
-                    onPrevious={() => setTicketPage((current) => Math.max(1, current - 1))}
-                    onNext={() => setTicketPage((current) => Math.min(totalTicketPages, current + 1))}
-                  />
-                ) : null}
-              </section>
+                    <Metric
+                      label="Active tickets"
+                      value={metrics.active}
+                      active={ticketFilter === "active"}
+                      onClick={() => applyTicketFilter("active")}
+                    />
+                    <Metric
+                      label="Pending internal"
+                      value={metrics.pendingInternal}
+                      active={ticketFilter === "pending_internal"}
+                      onClick={() => applyTicketFilter("pending_internal")}
+                    />
+                    <Metric
+                      label="Urgent"
+                      value={metrics.urgent}
+                      active={ticketFilter === "urgent"}
+                      onClick={() => applyTicketFilter("urgent")}
+                    />
+                  </section>
+
+                  <section className="mt-6">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h2 className="text-sm font-semibold text-slate-900">
+                        Ticket Dashboard
+                      </h2>
+                      <span className="text-xs text-slate-500">
+                        {filteredTickets.length === 0
+                          ? "0 shown"
+                          : `${(visibleTicketPage - 1) * TICKETS_PER_PAGE + 1}-${Math.min(
+                              visibleTicketPage * TICKETS_PER_PAGE,
+                              filteredTickets.length,
+                            )} of ${filteredTickets.length} shown`}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {paginatedTickets.map((ticket) => (
+                        <TicketCard
+                          key={ticket.id}
+                          ticket={ticket}
+                          active={ticket.id === selectedTicketId}
+                          onClick={() => selectTicket(ticket.id)}
+                          isEditingNextAction={
+                            ticket.id === editingNextActionId
+                          }
+                          nextActionDraft={nextActionDraft}
+                          onStartNextActionEdit={() =>
+                            startNextActionEdit(ticket)
+                          }
+                          onNextActionDraftChange={setNextActionDraft}
+                          onSaveNextAction={() => void saveNextAction(ticket)}
+                        />
+                      ))}
+                    </div>
+                    {filteredTickets.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
+                        <div className="text-sm font-medium text-slate-900">
+                          No tickets to show
+                        </div>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Create a ticket or adjust the search filter.
+                        </p>
+                      </div>
+                    ) : null}
+                    {filteredTickets.length > TICKETS_PER_PAGE ? (
+                      <Pagination
+                        page={visibleTicketPage}
+                        totalPages={totalTicketPages}
+                        onPrevious={() =>
+                          setTicketPage((current) => Math.max(1, current - 1))
+                        }
+                        onNext={() =>
+                          setTicketPage((current) =>
+                            Math.min(totalTicketPages, current + 1),
+                          )
+                        }
+                      />
+                    ) : null}
+                  </section>
+                </>
+              ) : (
+                <RequirementsWorkspace
+                  requirements={paginatedRequirements}
+                  totalRequirements={filteredRequirements.length}
+                  page={visibleRequirementPage}
+                  totalPages={totalRequirementPages}
+                  selectedRequirementId={selectedRequirementId}
+                  tickets={tickets}
+                  onSelect={selectRequirement}
+                  onOpenTicket={openRelatedTicket}
+                  onPreviousPage={() =>
+                    setRequirementPage((current) => Math.max(1, current - 1))
+                  }
+                  onNextPage={() =>
+                    setRequirementPage((current) =>
+                      Math.min(totalRequirementPages, current + 1),
+                    )
+                  }
+                />
+              )}
             </>
           ) : (
             <div className="grid min-h-[60vh] place-items-center rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
               <div>
                 <h1 className="text-lg font-semibold">Select a project</h1>
                 <p className="mt-2 max-w-md text-sm text-slate-500">
-                  The sidebar reads country folders from `PROJECTS_ROOT` and lists one layer of `proj_` project
-                  folders inside them.
+                  The sidebar reads country folders from `PROJECTS_ROOT` and
+                  lists one layer of `proj_` project folders inside them.
                 </p>
               </div>
             </div>
@@ -659,8 +1108,32 @@ export default function ProjectsWorkspace() {
           onSave={(draft) => updateTicket(selectedTicket.id, draft)}
           onDelete={() => void deleteTicket(selectedTicket.id)}
           onAddEvent={(draft) => void addEvent(selectedTicket.id, draft)}
-          onUpdateEvent={(index, draft) => void updateEvent(selectedTicket.id, index, draft)}
+          onUpdateEvent={(index, draft) =>
+            void updateEvent(selectedTicket.id, index, draft)
+          }
           onDeleteEvent={(index) => void deleteEvent(selectedTicket.id, index)}
+        />
+      ) : null}
+
+      {selectedRequirement ? (
+        <RequirementDrawer
+          requirement={selectedRequirement}
+          tickets={tickets}
+          saving={saving}
+          onClose={closeSelectedRequirement}
+          onDirtyChange={setSelectedRequirementDirty}
+          onSave={(draft) => updateRequirement(selectedRequirement.id, draft)}
+          onDelete={() => void deleteRequirement(selectedRequirement.id)}
+          onOpenTicket={openRelatedTicket}
+          onAddTimeline={(draft) =>
+            void addRequirementTimeline(selectedRequirement.id, draft)
+          }
+          onUpdateTimeline={(index, draft) =>
+            void updateRequirementTimeline(selectedRequirement.id, index, draft)
+          }
+          onDeleteTimeline={(index) =>
+            void deleteRequirementTimeline(selectedRequirement.id, index)
+          }
         />
       ) : null}
 
@@ -672,25 +1145,174 @@ export default function ProjectsWorkspace() {
         />
       ) : null}
 
+      {showNewRequirement ? (
+        <RequirementModal
+          saving={saving}
+          onClose={() => setShowNewRequirement(false)}
+          onCreate={createRequirement}
+        />
+      ) : null}
+
       {toast ? <Toast message={toast} /> : null}
     </div>
   );
 }
 
-function ProjectHeader({ project }: { project: ProjectInfo }) {
+function ProjectHeader({
+  project,
+  mode,
+  onModeChange,
+}: {
+  project: ProjectInfo;
+  mode: ProjectMode;
+  onModeChange: (mode: ProjectMode) => void;
+}) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <div>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{project.project_name}</h1>
-          <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-            {project.status || "active"}
-          </span>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {project.project_name}
+            </h1>
+            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+              {project.status || "active"}
+            </span>
+          </div>
+          <p className="w-full text-sm leading-6 text-slate-600">
+            {project.description || "No description."}
+          </p>
+          <div className="mt-3 text-xs text-slate-400">
+            Created at {formatDate(project.created_at)}
+          </div>
         </div>
-        <p className="w-full text-sm leading-6 text-slate-600">{project.description || "No description."}</p>
-        <div className="mt-3 text-xs text-slate-400">Created at {formatDate(project.created_at)}</div>
+        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+          {(["tickets", "requirements"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => onModeChange(item)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                mode === item
+                  ? "bg-white text-slate-950 shadow-sm"
+                  : "text-slate-500 hover:text-slate-950"
+              }`}
+            >
+              {item === "tickets" ? "Tickets" : "Requirements"}
+            </button>
+          ))}
+        </div>
       </div>
     </section>
+  );
+}
+
+function RequirementsWorkspace({
+  requirements,
+  totalRequirements,
+  page,
+  totalPages,
+  selectedRequirementId,
+  tickets,
+  onSelect,
+  onOpenTicket,
+  onPreviousPage,
+  onNextPage,
+}: {
+  requirements: Requirement[];
+  totalRequirements: number;
+  page: number;
+  totalPages: number;
+  selectedRequirementId: string;
+  tickets: Ticket[];
+  onSelect: (requirementId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
+  onPreviousPage: () => void;
+  onNextPage: () => void;
+}) {
+  return (
+    <section className="mt-6">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-slate-900">Requirements</h2>
+        <span className="text-xs text-slate-500">
+          {totalRequirements === 0
+            ? "0 shown"
+            : `${(page - 1) * TICKETS_PER_PAGE + 1}-${Math.min(
+                page * TICKETS_PER_PAGE,
+                totalRequirements,
+              )} of ${totalRequirements} shown`}
+        </span>
+      </div>
+      <div className="space-y-3">
+        {requirements.map((requirement) => (
+          <RequirementCard
+            key={requirement.id}
+            requirement={requirement}
+            active={requirement.id === selectedRequirementId}
+            tickets={tickets}
+            onClick={() => onSelect(requirement.id)}
+            onOpenTicket={onOpenTicket}
+          />
+        ))}
+      </div>
+      {totalRequirements === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
+          <div className="text-sm font-medium text-slate-900">
+            No requirements yet
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            Create a requirement to track customer asks for this project.
+          </p>
+        </div>
+      ) : null}
+      {totalRequirements > TICKETS_PER_PAGE ? (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPrevious={onPreviousPage}
+          onNext={onNextPage}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function RequirementCard({
+  requirement,
+  active,
+  tickets,
+  onClick,
+  onOpenTicket,
+}: {
+  requirement: Requirement;
+  active: boolean;
+  tickets: Ticket[];
+  onClick: () => void;
+  onOpenTicket: (ticketId: string) => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`w-full cursor-pointer rounded-lg border bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+        active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
+      }`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="line-clamp-2 text-base font-semibold leading-6 text-slate-950">
+            <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
+              {requirement.id}
+            </span>
+            <span>{requirement.title}</span>
+          </h3>
+        </div>
+        <RequirementStatusBadge status={requirement.status} />
+      </div>
+      <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+        <span>Updated {formatDateTimeFull(requirement.last_updated)}</span>
+        <span>{requirement.timeline.length} updates</span>
+      </div>
+    </div>
   );
 }
 
@@ -725,21 +1347,33 @@ function DashboardView({
   const topProjects = (data?.projects ?? [])
     .map((project) => ({
       ...project,
-      active: project.tickets.filter((ticket) => ticket.status !== "resolved").length,
-      urgent: project.tickets.filter((ticket) => ticket.priority === "urgent").length,
+      active: project.tickets.filter((ticket) => ticket.status !== "resolved")
+        .length,
+      urgent: project.tickets.filter((ticket) => ticket.priority === "urgent")
+        .length,
     }))
-    .sort((a, b) => b.active - a.active || b.urgent - a.urgent || a.project.project_name.localeCompare(b.project.project_name))
+    .sort(
+      (a, b) =>
+        b.active - a.active ||
+        b.urgent - a.urgent ||
+        a.project.project_name.localeCompare(b.project.project_name),
+    )
     .slice(0, 6);
-  const recentActivity = [...allTickets].sort((a, b) => b.ticket.updated_at.localeCompare(a.ticket.updated_at)).slice(0, 8);
+  const recentActivity = [...allTickets]
+    .sort((a, b) => b.ticket.updated_at.localeCompare(a.ticket.updated_at))
+    .slice(0, 8);
 
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Dashboard</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
+              Dashboard
+            </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Monitor every support ticket across {data?.projects.length ?? 0} projects.
+              Monitor every support ticket across {data?.projects.length ?? 0}{" "}
+              projects.
             </p>
           </div>
         </div>
@@ -781,21 +1415,27 @@ function DashboardView({
               items={[
                 {
                   label: "Low",
-                  value: allTickets.filter((item) => item.ticket.priority === "low").length,
+                  value: allTickets.filter(
+                    (item) => item.ticket.priority === "low",
+                  ).length,
                   color: "#94a3b8",
                   active: activeFilter === "priority_low",
                   onClick: () => onFilterChange("priority_low"),
                 },
                 {
                   label: "Medium",
-                  value: allTickets.filter((item) => item.ticket.priority === "medium").length,
+                  value: allTickets.filter(
+                    (item) => item.ticket.priority === "medium",
+                  ).length,
                   color: "#3b82f6",
                   active: activeFilter === "priority_medium",
                   onClick: () => onFilterChange("priority_medium"),
                 },
                 {
                   label: "High",
-                  value: allTickets.filter((item) => item.ticket.priority === "high").length,
+                  value: allTickets.filter(
+                    (item) => item.ticket.priority === "high",
+                  ).length,
                   color: "#fb7185",
                   active: activeFilter === "priority_high",
                   onClick: () => onFilterChange("priority_high"),
@@ -823,17 +1463,27 @@ function DashboardView({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-slate-950">{project.project.project_name}</div>
-                      <div className="mt-1 text-xs text-slate-500">{project.folder.split("/")[0]}</div>
+                      <div className="truncate text-sm font-semibold text-slate-950">
+                        {project.project.project_name}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {project.folder.split("/")[0]}
+                      </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-sm font-semibold text-slate-950">{project.active} active</div>
-                      <div className="text-xs text-red-600">{project.urgent} urgent</div>
+                      <div className="text-sm font-semibold text-slate-950">
+                        {project.active} active
+                      </div>
+                      <div className="text-xs text-red-600">
+                        {project.urgent} urgent
+                      </div>
                     </div>
                   </div>
                 </button>
               ))}
-              {topProjects.length === 0 ? <EmptyState text="No project data yet." /> : null}
+              {topProjects.length === 0 ? (
+                <EmptyState text="No project data yet." />
+              ) : null}
             </div>
           </ChartPanel>
         </div>
@@ -843,9 +1493,15 @@ function DashboardView({
         <ChartPanel title={`${dashboardFilterLabel(activeFilter)} tickets`}>
           <div className="space-y-2">
             {tickets.map((item) => (
-              <DashboardTicketRow key={`${item.folder}-${item.ticket.id}`} item={item} onClick={() => onOpenTicket(item)} />
+              <DashboardTicketRow
+                key={`${item.folder}-${item.ticket.id}`}
+                item={item}
+                onClick={() => onOpenTicket(item)}
+              />
             ))}
-            {ticketCount === 0 ? <EmptyState text="No tickets match this dashboard filter." /> : null}
+            {ticketCount === 0 ? (
+              <EmptyState text="No tickets match this dashboard filter." />
+            ) : null}
           </div>
           {ticketCount > TICKETS_PER_PAGE ? (
             <Pagination
@@ -869,12 +1525,18 @@ function DashboardView({
                   [{item.ticket.id}] {item.ticket.title}
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-slate-500">{item.project.project_name}</span>
-                  <span className="text-xs text-slate-400">Updated {formatDateTimeFull(item.ticket.updated_at)}</span>
+                  <span className="text-xs text-slate-500">
+                    {item.project.project_name}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    Updated {formatDateTimeFull(item.ticket.updated_at)}
+                  </span>
                 </div>
               </button>
             ))}
-            {recentActivity.length === 0 ? <EmptyState text="No recent ticket activity." /> : null}
+            {recentActivity.length === 0 ? (
+              <EmptyState text="No recent ticket activity." />
+            ) : null}
           </div>
         </ChartPanel>
       </section>
@@ -882,7 +1544,13 @@ function DashboardView({
   );
 }
 
-function ChartPanel({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartPanel({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="mb-3 text-sm font-semibold text-slate-900">{title}</h2>
@@ -913,7 +1581,14 @@ function PieChart({
     <div className="grid gap-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
       <div className="relative grid aspect-square max-w-[180px] place-items-center justify-self-center rounded-full bg-slate-50">
         <svg viewBox="0 0 120 120" className="h-full w-full rotate-[-90deg]">
-          <circle cx="60" cy="60" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="18" />
+          <circle
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            stroke="#e2e8f0"
+            strokeWidth="18"
+          />
           {items.map((item) => {
             const length = total > 0 ? (item.value / total) * circumference : 0;
             const strokeDashoffset = -offset;
@@ -942,8 +1617,12 @@ function PieChart({
           className="absolute grid h-20 w-20 place-items-center rounded-full border border-slate-200 bg-white text-center shadow-sm"
         >
           <span>
-            <span className="block text-xl font-semibold text-slate-950">{total}</span>
-            <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">Total</span>
+            <span className="block text-xl font-semibold text-slate-950">
+              {total}
+            </span>
+            <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
+              Total
+            </span>
           </span>
         </button>
       </div>
@@ -954,14 +1633,23 @@ function PieChart({
             type="button"
             onClick={item.onClick}
             className={`flex items-center justify-between gap-3 rounded-lg border p-2 text-left transition hover:border-slate-300 hover:bg-slate-50 ${
-              item.active ? "border-slate-400 bg-slate-50 ring-2 ring-slate-100" : "border-slate-200"
+              item.active
+                ? "border-slate-400 bg-slate-50 ring-2 ring-slate-100"
+                : "border-slate-200"
             }`}
           >
             <span className="flex min-w-0 items-center gap-2">
-              <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-              <span className="truncate text-sm font-medium text-slate-700">{item.label}</span>
+              <span
+                className="h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: item.color }}
+              />
+              <span className="truncate text-sm font-medium text-slate-700">
+                {item.label}
+              </span>
             </span>
-            <span className="text-sm font-semibold text-slate-950">{item.value}</span>
+            <span className="text-sm font-semibold text-slate-950">
+              {item.value}
+            </span>
           </button>
         ))}
       </div>
@@ -974,7 +1662,13 @@ function PieChart({
   );
 }
 
-function DashboardTicketRow({ item, onClick }: { item: DashboardTicket; onClick: () => void }) {
+function DashboardTicketRow({
+  item,
+  onClick,
+}: {
+  item: DashboardTicket;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -986,7 +1680,9 @@ function DashboardTicketRow({ item, onClick }: { item: DashboardTicket; onClick:
           <div className="line-clamp-2 text-sm font-semibold text-slate-950">
             [{item.ticket.id}] {item.ticket.title}
           </div>
-          <div className="mt-1 text-xs text-slate-500">{item.project.project_name}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {item.project.project_name}
+          </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-1">
           <StatusBadge status={item.ticket.status} />
@@ -996,13 +1692,19 @@ function DashboardTicketRow({ item, onClick }: { item: DashboardTicket; onClick:
       <div className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
         {item.ticket.next_action || item.ticket.summary || "No next action."}
       </div>
-      <div className="mt-2 text-xs text-slate-400">Updated {formatDateTimeFull(item.ticket.updated_at)}</div>
+      <div className="mt-2 text-xs text-slate-400">
+        Updated {formatDateTimeFull(item.ticket.updated_at)}
+      </div>
     </button>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">{text}</div>;
+  return (
+    <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+      {text}
+    </div>
+  );
 }
 
 function Pagination({
@@ -1060,7 +1762,9 @@ function Metric({
       }`}
     >
       <div className="text-2xl font-semibold">{value}</div>
-      <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+        {label}
+      </div>
     </button>
   );
 }
@@ -1097,12 +1801,16 @@ function ProjectTreeGroup({
               key={folder}
               onClick={() => onSelect(folder)}
               className={`mt-1 flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition ${
-                folder === selectedFolder ? "bg-slate-100 text-slate-950" : "text-slate-600 hover:bg-slate-50"
+                folder === selectedFolder
+                  ? "bg-slate-100 text-slate-950"
+                  : "text-slate-600 hover:bg-slate-50"
               }`}
             >
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
               <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{project.project_name}</span>
+                <span className="block truncate text-sm font-medium">
+                  {project.project_name}
+                </span>
               </span>
             </button>
           ))}
@@ -1152,7 +1860,9 @@ function TicketCard({
           <PriorityBadge priority={ticket.priority} />
         </div>
       </div>
-      <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">{ticket.summary || "No summary."}</p>
+      <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-600">
+        {ticket.summary || "No summary."}
+      </p>
       <div
         className={`mt-4 rounded-lg bg-slate-50 p-3 ${isEditingNextAction ? "" : "cursor-pointer hover:bg-slate-100"}`}
         onClick={(event) => {
@@ -1168,7 +1878,9 @@ function TicketCard({
         }}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Next action</div>
+          <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+            Next action
+          </div>
         </div>
         {isEditingNextAction ? (
           <div className="mt-2">
@@ -1180,7 +1892,9 @@ function TicketCard({
             />
           </div>
         ) : (
-          <p className="mt-1 line-clamp-2 text-sm text-slate-700">{ticket.next_action || "No next action."}</p>
+          <p className="mt-1 line-clamp-2 text-sm text-slate-700">
+            {ticket.next_action || "No next action."}
+          </p>
         )}
       </div>
       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
@@ -1234,6 +1948,49 @@ function TicketModal({
   );
 }
 
+function RequirementModal({
+  saving,
+  onClose,
+  onCreate,
+}: {
+  saving: boolean;
+  onClose: () => void;
+  onCreate: (draft: RequirementDraft) => void | Promise<void>;
+}) {
+  const [dirty, setDirty] = useState(false);
+
+  function closeModal() {
+    if (dirty && !confirm("Discard this new requirement draft?")) {
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">New Requirement</h2>
+          <button
+            onClick={closeModal}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+        <RequirementForm
+          initial={emptyRequirementDraft}
+          tickets={[]}
+          saving={saving}
+          submitLabel="Create requirement"
+          onDirtyChange={setDirty}
+          onSubmit={onCreate}
+        />
+      </div>
+    </Overlay>
+  );
+}
+
 function TicketDrawer({
   ticket,
   saving,
@@ -1269,7 +2026,9 @@ function TicketDrawer({
       <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white p-5">
           <div>
-            <div className="text-xs font-medium text-slate-500">{ticket.id}</div>
+            <div className="text-xs font-medium text-slate-500">
+              {ticket.id}
+            </div>
             <h2 className="mt-1 text-xl font-semibold">{ticket.title}</h2>
           </div>
           <button
@@ -1314,7 +2073,11 @@ function TicketDrawer({
                   saving={saving}
                   onUpdate={(draft) => onUpdateEvent(index, draft)}
                   onDelete={() => {
-                    if (confirm("Delete this timeline event? This writes directly to tickets.json.")) {
+                    if (
+                      confirm(
+                        "Delete this timeline event? This writes directly to tickets.json.",
+                      )
+                    ) {
                       onDeleteEvent(index);
                     }
                   }}
@@ -1330,7 +2093,141 @@ function TicketDrawer({
 
           <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <h3 className="mb-3 text-sm font-semibold">Add timeline event</h3>
-            <EventForm saving={saving} submitLabel="Add event" onSubmit={onAddEvent} />
+            <EventForm
+              saving={saving}
+              submitLabel="Add event"
+              onSubmit={onAddEvent}
+            />
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function RequirementDrawer({
+  requirement,
+  tickets,
+  saving,
+  onClose,
+  onDirtyChange,
+  onSave,
+  onDelete,
+  onOpenTicket,
+  onAddTimeline,
+  onUpdateTimeline,
+  onDeleteTimeline,
+}: {
+  requirement: Requirement;
+  tickets: Ticket[];
+  saving: boolean;
+  onClose: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onSave: (draft: RequirementDraft) => Promise<void>;
+  onDelete: () => void;
+  onOpenTicket: (ticketId: string) => void;
+  onAddTimeline: (draft: RequirementTimelineDraft) => void;
+  onUpdateTimeline: (index: number, draft: RequirementTimelineDraft) => void;
+  onDeleteTimeline: (index: number) => void;
+}) {
+  useEffect(() => {
+    onDirtyChange(false);
+  }, [onDirtyChange, requirement.id]);
+
+  async function saveRequirement(draft: RequirementDraft) {
+    await onSave(draft);
+    onDirtyChange(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 flex justify-end bg-slate-950/20">
+      <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white p-5">
+          <div>
+            <div className="text-xs font-medium text-slate-500">
+              {requirement.id}
+            </div>
+            <h2 className="mt-1 text-xl font-semibold">{requirement.title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="space-y-6 p-5">
+          <RequirementForm
+            key={requirement.id}
+            initial={requirementToDraft(requirement)}
+            tickets={tickets}
+            saving={saving}
+            submitLabel="Save changes"
+            onDirtyChange={onDirtyChange}
+            onSubmit={saveRequirement}
+          />
+
+          {requirement.related_tickets.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">Related tickets</h3>
+              <RelatedTicketChips
+                ticketIds={requirement.related_tickets}
+                tickets={tickets}
+                onOpenTicket={onOpenTicket}
+              />
+            </section>
+          ) : null}
+
+          <div className="flex justify-end">
+            <button
+              onClick={onDelete}
+              disabled={saving}
+              className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+            >
+              Delete requirement
+            </button>
+          </div>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Timeline</h3>
+              <span className="text-xs text-slate-500">Chronological</span>
+            </div>
+            <div className="space-y-3">
+              {requirement.timeline.map((item, index) => (
+                <RequirementTimelineItemView
+                  key={`${item.time}-${index}`}
+                  item={item}
+                  index={index}
+                  saving={saving}
+                  onUpdate={(draft) => onUpdateTimeline(index, draft)}
+                  onDelete={() => {
+                    if (
+                      confirm(
+                        "Delete this requirement timeline update? This writes directly to requirements.json.",
+                      )
+                    ) {
+                      onDeleteTimeline(index);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+            {requirement.timeline.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                No requirement updates yet.
+              </div>
+            ) : null}
+          </section>
+
+          <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h3 className="mb-3 text-sm font-semibold">Add timeline update</h3>
+            <RequirementTimelineForm
+              saving={saving}
+              submitLabel="Add update"
+              onSubmit={onAddTimeline}
+            />
           </section>
         </div>
       </aside>
@@ -1381,21 +2278,32 @@ function TicketForm({
   }
 
   return (
-    <form onSubmit={submit} onKeyDown={preventKeyboardSubmit} className="space-y-4">
+    <form
+      onSubmit={submit}
+      onKeyDown={preventKeyboardSubmit}
+      className="space-y-4"
+    >
       <Field label="Title">
         <input
           required
           value={draft.title}
-          onChange={(event) => updateDraft({ ...draft, title: event.target.value })}
+          onChange={(event) =>
+            updateDraft({ ...draft, title: event.target.value })
+          }
           className="form-input"
-          placeholder="Describe the issue"
+          placeholder="[Model]Describe the issue"
         />
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Status">
           <select
             value={draft.status}
-            onChange={(event) => updateDraft({ ...draft, status: event.target.value as TicketStatus })}
+            onChange={(event) =>
+              updateDraft({
+                ...draft,
+                status: event.target.value as TicketStatus,
+              })
+            }
             className="form-input"
           >
             {STATUSES.map((status) => (
@@ -1408,7 +2316,12 @@ function TicketForm({
         <Field label="Priority">
           <select
             value={draft.priority}
-            onChange={(event) => updateDraft({ ...draft, priority: event.target.value as TicketPriority })}
+            onChange={(event) =>
+              updateDraft({
+                ...draft,
+                priority: event.target.value as TicketPriority,
+              })
+            }
             className="form-input"
           >
             {PRIORITIES.map((priority) => (
@@ -1422,7 +2335,9 @@ function TicketForm({
       <Field label="Summary">
         <textarea
           value={draft.summary}
-          onChange={(event) => updateDraft({ ...draft, summary: event.target.value })}
+          onChange={(event) =>
+            updateDraft({ ...draft, summary: event.target.value })
+          }
           className="form-input min-h-28 resize-y"
           placeholder="Current issue context and investigation notes"
         />
@@ -1431,7 +2346,9 @@ function TicketForm({
         <Field label="Next action">
           <textarea
             value={draft.next_action}
-            onChange={(event) => updateDraft({ ...draft, next_action: event.target.value })}
+            onChange={(event) =>
+              updateDraft({ ...draft, next_action: event.target.value })
+            }
             className="form-input min-h-20 resize-y"
             placeholder="Owner, expected response, or next technical step"
           />
@@ -1440,6 +2357,345 @@ function TicketForm({
       <button
         disabled={saving}
         className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+      >
+        {saving ? "Saving..." : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function RequirementForm({
+  initial,
+  tickets,
+  saving,
+  submitLabel,
+  onDirtyChange,
+  onSubmit,
+}: {
+  initial: RequirementDraft;
+  tickets: Ticket[];
+  saving: boolean;
+  submitLabel: string;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSubmit: (draft: RequirementDraft) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState<RequirementDraft>(initial);
+  const [baseline, setBaseline] = useState<RequirementDraft>(initial);
+  const [ticketPickerOpen, setTicketPickerOpen] = useState(false);
+  const [ticketQuery, setTicketQuery] = useState("");
+
+  const selectableTickets = tickets.filter((ticket) => {
+    const query = ticketQuery.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+    return [
+      ticket.id,
+      ticket.title,
+      ticket.summary,
+      ticket.status,
+      ticket.priority,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
+  });
+
+  function updateDraft(nextDraft: RequirementDraft) {
+    setDraft(nextDraft);
+    onDirtyChange?.(!requirementDraftsEqual(nextDraft, baseline));
+  }
+
+  function addRelatedTicket(ticketId: string) {
+    if (draft.related_tickets.includes(ticketId)) {
+      return;
+    }
+    updateDraft({
+      ...draft,
+      related_tickets: [...draft.related_tickets, ticketId],
+    });
+  }
+
+  function removeRelatedTicket(ticketId: string) {
+    updateDraft({
+      ...draft,
+      related_tickets: draft.related_tickets.filter(
+        (current) => current !== ticketId,
+      ),
+    });
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSubmit(draft);
+    setBaseline(draft);
+    onDirtyChange?.(false);
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Title">
+        <input
+          required
+          value={draft.title}
+          onChange={(event) =>
+            updateDraft({ ...draft, title: event.target.value })
+          }
+          className="form-input"
+          placeholder="[Model]Short customer requirement"
+        />
+      </Field>
+      <Field label="Status">
+        <select
+          value={draft.status}
+          onChange={(event) =>
+            updateDraft({
+              ...draft,
+              status: event.target.value as RequirementStatus,
+            })
+          }
+          className="form-input"
+        >
+          {REQUIREMENT_STATUSES.map((status) => (
+            <option key={status} value={status}>
+              {requirementStatusLabels[status]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Details">
+        <textarea
+          value={draft.details}
+          onChange={(event) =>
+            updateDraft({ ...draft, details: event.target.value })
+          }
+          className="form-input min-h-28 resize-y"
+          placeholder="Requirement context, customer expectation, constraints, or certification notes"
+        />
+      </Field>
+      <div>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <span className="block text-xs font-medium text-slate-600">
+            Related tickets
+          </span>
+          <button
+            type="button"
+            onClick={() => setTicketPickerOpen(true)}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            Add ticket
+          </button>
+        </div>
+        {draft.related_tickets.length > 0 ? (
+          <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+            {draft.related_tickets.map((ticketId) => (
+              <span
+                key={ticketId}
+                className="relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 pr-5 text-xs font-medium text-slate-700"
+              >
+                {ticketId}
+                <button
+                  type="button"
+                  onClick={() => removeRelatedTicket(ticketId)}
+                  className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                  aria-label={`Remove ${ticketId}`}
+                >
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+            No related tickets selected.
+          </div>
+        )}
+      </div>
+      {ticketPickerOpen ? (
+        <Overlay>
+          <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Add related ticket</h3>
+              <button
+                type="button"
+                onClick={() => setTicketPickerOpen(false)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+              >
+                Close
+              </button>
+            </div>
+            <input
+              value={ticketQuery}
+              onChange={(event) => setTicketQuery(event.target.value)}
+              className="mb-3 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+              placeholder="Search by ticket ID, title, status, or priority"
+            />
+            <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+              {selectableTickets.map((ticket) => {
+                const selected = draft.related_tickets.includes(ticket.id);
+                return (
+                  <button
+                    key={ticket.id}
+                    type="button"
+                    onClick={() => {
+                      addRelatedTicket(ticket.id);
+                      setTicketPickerOpen(false);
+                      setTicketQuery("");
+                    }}
+                    disabled={selected}
+                    className={`w-full rounded-lg border p-3 text-left transition ${
+                      selected
+                        ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">
+                          [{ticket.id}] {ticket.title}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                          {ticket.summary ||
+                            ticket.next_action ||
+                            "No summary."}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        {selected ? (
+                          <span className="rounded-md bg-slate-200 px-2 py-1 text-xs font-medium">
+                            Selected
+                          </span>
+                        ) : (
+                          <PriorityBadge priority={ticket.priority} />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {selectableTickets.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                  No tickets match this search.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </Overlay>
+      ) : null}
+      <button
+        disabled={saving}
+        className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+      >
+        {saving ? "Saving..." : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function RequirementTimelineItemView({
+  item,
+  index,
+  saving,
+  onUpdate,
+  onDelete,
+}: {
+  item: RequirementTimelineItem;
+  index: number;
+  saving: boolean;
+  onUpdate: (draft: RequirementTimelineDraft) => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium text-slate-500">
+            {formatDateOnly(item.time)}
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+            {item.remark || "-"}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button
+            onClick={() => setEditing(!editing)}
+            className="rounded-md px-2 py-1 text-xs hover:bg-slate-100"
+          >
+            Edit
+          </button>
+          <button
+            onClick={onDelete}
+            className="rounded-md px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+      {editing ? (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <RequirementTimelineForm
+            key={`${item.time}-${index}`}
+            initial={requirementTimelineToDraft(item)}
+            saving={saving}
+            submitLabel="Save update"
+            onSubmit={(draft) => {
+              onUpdate(draft);
+              setEditing(false);
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RequirementTimelineForm({
+  initial = emptyRequirementTimelineDraft,
+  saving,
+  submitLabel,
+  onSubmit,
+}: {
+  initial?: RequirementTimelineDraft;
+  saving: boolean;
+  submitLabel: string;
+  onSubmit: (draft: RequirementTimelineDraft) => void;
+}) {
+  const [draft, setDraft] = useState<RequirementTimelineDraft>(initial);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSubmit(draft);
+    if (!initial.remark) {
+      setDraft(emptyRequirementTimelineDraft);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <Field label="Time">
+        <input
+          type="date"
+          value={draft.time}
+          onChange={(event) => setDraft({ ...draft, time: event.target.value })}
+          className="form-input"
+        />
+      </Field>
+      <Field label="Remark">
+        <textarea
+          required
+          value={draft.remark}
+          onChange={(event) =>
+            setDraft({ ...draft, remark: event.target.value })
+          }
+          className="form-input min-h-20 resize-y"
+          placeholder="Progress update or customer feedback"
+        />
+      </Field>
+      <button
+        disabled={saving}
+        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
       >
         {saving ? "Saving..." : submitLabel}
       </button>
@@ -1467,18 +2723,30 @@ function TimelineItem({
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className={`rounded-md px-2 py-1 text-xs font-medium ring-1 ${eventRoleStyles[event.role]}`}>
+            <span
+              className={`rounded-md px-2 py-1 text-xs font-medium ring-1 ${eventRoleStyles[event.role]}`}
+            >
               {eventRoleLabels[event.role]}
             </span>
-            <span className="text-xs text-slate-500">{formatDateOnly(event.time)}</span>
+            <span className="text-xs text-slate-500">
+              {formatDateOnly(event.time)}
+            </span>
           </div>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{event.content || "-"}</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+            {event.content || "-"}
+          </p>
         </div>
         <div className="flex shrink-0 gap-1">
-          <button onClick={() => setEditing(!editing)} className="rounded-md px-2 py-1 text-xs hover:bg-slate-100">
+          <button
+            onClick={() => setEditing(!editing)}
+            className="rounded-md px-2 py-1 text-xs hover:bg-slate-100"
+          >
             Edit
           </button>
-          <button onClick={onDelete} className="rounded-md px-2 py-1 text-xs text-red-700 hover:bg-red-50">
+          <button
+            onClick={onDelete}
+            className="rounded-md px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+          >
             Delete
           </button>
         </div>
@@ -1529,14 +2797,18 @@ function EventForm({
           <input
             type="date"
             value={draft.time}
-            onChange={(event) => setDraft({ ...draft, time: event.target.value })}
+            onChange={(event) =>
+              setDraft({ ...draft, time: event.target.value })
+            }
             className="form-input"
           />
         </Field>
         <Field label="Role">
           <select
             value={draft.role}
-            onChange={(event) => setDraft({ ...draft, role: event.target.value as EventRole })}
+            onChange={(event) =>
+              setDraft({ ...draft, role: event.target.value as EventRole })
+            }
             className="form-input"
           >
             {EVENT_ROLES.map((role) => (
@@ -1551,7 +2823,9 @@ function EventForm({
         <textarea
           required
           value={draft.content}
-          onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+          onChange={(event) =>
+            setDraft({ ...draft, content: event.target.value })
+          }
           className="form-input min-h-20 resize-y"
           placeholder="Add the customer update, support response, or internal note"
         />
@@ -1566,12 +2840,72 @@ function EventForm({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-600">{label}</span>
+      <span className="mb-1 block text-xs font-medium text-slate-600">
+        {label}
+      </span>
       {children}
     </label>
+  );
+}
+
+function RelatedTicketChips({
+  ticketIds,
+  tickets,
+  onOpenTicket,
+}: {
+  ticketIds: string[];
+  tickets: Ticket[];
+  onOpenTicket: (ticketId: string) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {ticketIds.map((ticketId) => {
+        const exists = tickets.some((ticket) => ticket.id === ticketId);
+        return (
+          <button
+            key={ticketId}
+            type="button"
+            disabled={!exists}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenTicket(ticketId);
+            }}
+            className={`rounded-md border px-2 py-1 text-xs font-medium ${
+              exists
+                ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+            }`}
+          >
+            {ticketId}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function RequirementStatusBadge({ status }: { status: RequirementStatus }) {
+  const styles: Record<RequirementStatus, string> = {
+    pending: "bg-slate-100 text-slate-700",
+    in_progress: "bg-blue-50 text-blue-700",
+    testing: "bg-violet-50 text-violet-700",
+    finished: "bg-emerald-50 text-emerald-700",
+  };
+  return (
+    <span
+      className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}
+    >
+      {requirementStatusLabels[status]}
+    </span>
   );
 }
 
@@ -1581,7 +2915,13 @@ function StatusBadge({ status }: { status: TicketStatus }) {
     pending_customer: "bg-amber-50 text-amber-800",
     resolved: "bg-emerald-50 text-emerald-700",
   };
-  return <span className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}>{statusLabels[status]}</span>;
+  return (
+    <span
+      className={`rounded-md px-2 py-1 text-xs font-medium ${styles[status]}`}
+    >
+      {statusLabels[status]}
+    </span>
+  );
 }
 
 function PriorityBadge({ priority }: { priority: TicketPriority }) {
@@ -1592,14 +2932,20 @@ function PriorityBadge({ priority }: { priority: TicketPriority }) {
     urgent: "bg-red-600 text-white",
   };
   return (
-    <span className={`rounded-md px-2 py-1 text-xs font-medium ${styles[priority]}`}>
+    <span
+      className={`rounded-md px-2 py-1 text-xs font-medium ${styles[priority]}`}
+    >
       {priorityLabels[priority]}
     </span>
   );
 }
 
 function Overlay({ children }: { children: React.ReactNode }) {
-  return <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/30 p-4">{children}</div>;
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/30 p-4">
+      {children}
+    </div>
+  );
 }
 
 function Toast({ message }: { message: string }) {
@@ -1639,7 +2985,11 @@ function ticketToDraft(ticket: Ticket): TicketDraft {
   };
 }
 
-function ticketDraftsEqual(left: TicketDraft, right: TicketDraft, includeNextAction: boolean) {
+function ticketDraftsEqual(
+  left: TicketDraft,
+  right: TicketDraft,
+  includeNextAction: boolean,
+) {
   return (
     left.title === right.title &&
     left.status === right.status &&
@@ -1649,7 +2999,57 @@ function ticketDraftsEqual(left: TicketDraft, right: TicketDraft, includeNextAct
   );
 }
 
-function flattenDashboardTickets(data: DashboardData | null): DashboardTicket[] {
+function requirementToDraft(requirement: Requirement): RequirementDraft {
+  return {
+    title: requirement.title,
+    status: requirement.status,
+    details: requirement.details,
+    related_tickets: requirement.related_tickets,
+  };
+}
+
+function requirementDraftForApi(draft: RequirementDraft) {
+  return {
+    title: draft.title,
+    status: draft.status,
+    details: draft.details,
+    related_tickets: draft.related_tickets,
+  };
+}
+
+function requirementDraftsEqual(
+  left: RequirementDraft,
+  right: RequirementDraft,
+) {
+  return (
+    left.title === right.title &&
+    left.status === right.status &&
+    left.details === right.details &&
+    left.related_tickets.join("\n") === right.related_tickets.join("\n")
+  );
+}
+
+function requirementTimelineToDraft(
+  item: RequirementTimelineItem,
+): RequirementTimelineDraft {
+  return {
+    time: dateInputValue(item.time),
+    remark: item.remark,
+  };
+}
+
+function requirementTimelineDraftForApi(
+  draft: RequirementTimelineDraft,
+): RequirementTimelineDraft {
+  return {
+    ...draft,
+    time: draft.time.includes("T") ? draft.time : `${draft.time}T00:00:00`,
+  };
+}
+
+function flattenDashboardTickets(
+  data: DashboardData | null,
+): DashboardTicket[] {
   return (data?.projects ?? []).flatMap((project) =>
     project.tickets.map((ticket) => ({
       folder: project.folder,
@@ -1659,14 +3059,20 @@ function flattenDashboardTickets(data: DashboardData | null): DashboardTicket[] 
   );
 }
 
-function filterDashboardTickets(tickets: DashboardTicket[], filter: DashboardFilter, query: string) {
+function filterDashboardTickets(
+  tickets: DashboardTicket[],
+  filter: DashboardFilter,
+  query: string,
+) {
   const normalizedQuery = query.trim().toLowerCase();
   return tickets.filter((item) => {
     const matchesFilter =
       filter === "all" ||
       (filter === "active" && item.ticket.status !== "resolved") ||
-      (filter === "pending_internal" && item.ticket.status === "pending_internal") ||
-      (filter === "pending_customer" && item.ticket.status === "pending_customer") ||
+      (filter === "pending_internal" &&
+        item.ticket.status === "pending_internal") ||
+      (filter === "pending_customer" &&
+        item.ticket.status === "pending_customer") ||
       (filter === "urgent" && item.ticket.priority === "urgent") ||
       (filter === "priority_low" && item.ticket.priority === "low") ||
       (filter === "priority_medium" && item.ticket.priority === "medium") ||
@@ -1701,10 +3107,15 @@ function dashboardMetrics(tickets: DashboardTicket[]) {
   return {
     total: tickets.length,
     active: tickets.filter((item) => item.ticket.status !== "resolved").length,
-    pendingInternal: tickets.filter((item) => item.ticket.status === "pending_internal").length,
-    pendingCustomer: tickets.filter((item) => item.ticket.status === "pending_customer").length,
+    pendingInternal: tickets.filter(
+      (item) => item.ticket.status === "pending_internal",
+    ).length,
+    pendingCustomer: tickets.filter(
+      (item) => item.ticket.status === "pending_customer",
+    ).length,
     urgent: tickets.filter((item) => item.ticket.priority === "urgent").length,
-    resolved: tickets.filter((item) => item.ticket.status === "resolved").length,
+    resolved: tickets.filter((item) => item.ticket.status === "resolved")
+      .length,
   };
 }
 
@@ -1771,7 +3182,10 @@ function formatDate(value: string) {
   if (!value) {
     return "-";
   }
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: APP_TIME_ZONE }).format(new Date(value));
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeZone: APP_TIME_ZONE,
+  }).format(new Date(value));
 }
 
 function formatDateOnly(value: string) {
@@ -1806,7 +3220,9 @@ function formatBeijingDateTime(value: string) {
     second: "2-digit",
     hourCycle: "h23",
   }).formatToParts(new Date(value));
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 }
 

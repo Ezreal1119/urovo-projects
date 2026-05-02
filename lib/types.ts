@@ -9,10 +9,12 @@ export const STATUSES = [
 export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 
 export const EVENT_ROLES = ["customer", "support", "internal", "sales", "others"] as const;
+export const REQUIREMENT_STATUSES = ["pending", "in_progress", "testing", "finished"] as const;
 
 export type TicketStatus = (typeof STATUSES)[number];
 export type TicketPriority = (typeof PRIORITIES)[number];
 export type EventRole = (typeof EVENT_ROLES)[number];
+export type RequirementStatus = (typeof REQUIREMENT_STATUSES)[number];
 
 export type ProjectInfo = {
   project_id: string;
@@ -58,3 +60,22 @@ export type Ticket = {
 
 export type TicketInput = Partial<Omit<Ticket, "id" | "created_at" | "updated_at">>;
 export type EventInput = Partial<TimelineEvent>;
+
+export type RequirementTimelineItem = {
+  time: string;
+  remark: string;
+};
+
+export type Requirement = {
+  id: string;
+  title: string;
+  status: RequirementStatus;
+  details: string;
+  timeline: RequirementTimelineItem[];
+  related_tickets: string[];
+  created_at: string;
+  last_updated: string;
+};
+
+export type RequirementInput = Partial<Omit<Requirement, "id" | "created_at" | "last_updated">>;
+export type RequirementTimelineInput = Partial<RequirementTimelineItem>;
