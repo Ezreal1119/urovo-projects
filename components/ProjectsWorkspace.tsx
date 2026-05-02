@@ -37,6 +37,8 @@ type ProjectGroup = {
 
 type TicketFilter = "all" | "active" | "pending_internal" | "urgent";
 
+const TICKETS_PER_PAGE = 10;
+
 const emptyTicketDraft: TicketDraft = {
   title: "",
   status: "pending_internal",
@@ -89,6 +91,7 @@ export default function ProjectsWorkspace() {
   const [projectQuery, setProjectQuery] = useState("");
   const [globalQuery, setGlobalQuery] = useState("");
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>("all");
+  const [ticketPage, setTicketPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -162,8 +165,26 @@ export default function ProjectsWorkspace() {
     };
   }, [tickets]);
 
+  const totalTicketPages = Math.max(1, Math.ceil(filteredTickets.length / TICKETS_PER_PAGE));
+  const visibleTicketPage = Math.min(ticketPage, totalTicketPages);
+  const paginatedTickets = filteredTickets.slice(
+    (visibleTicketPage - 1) * TICKETS_PER_PAGE,
+    visibleTicketPage * TICKETS_PER_PAGE,
+  );
+
+  useEffect(() => {
+    setTicketPage(1);
+  }, [selectedFolder, globalQuery, ticketFilter]);
+
+  useEffect(() => {
+    if (ticketPage > totalTicketPages) {
+      setTicketPage(totalTicketPages);
+    }
+  }, [ticketPage, totalTicketPages]);
+
   function applyTicketFilter(filter: TicketFilter) {
     setTicketFilter(filter);
+    setTicketPage(1);
     if (filter === "all") {
       setGlobalQuery("");
     }
@@ -263,6 +284,7 @@ export default function ProjectsWorkspace() {
         body: JSON.stringify(draft),
       });
       setTickets((current) => [data.ticket, ...current]);
+      setTicketPage(1);
       setSelectedTicketId(data.ticket.id);
       setShowNewTicket(false);
     } finally {
@@ -467,10 +489,17 @@ export default function ProjectsWorkspace() {
               <section className="mt-6">
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-slate-900">Ticket Dashboard</h2>
-                  <span className="text-xs text-slate-500">{filteredTickets.length} shown</span>
+                  <span className="text-xs text-slate-500">
+                    {filteredTickets.length === 0
+                      ? "0 shown"
+                      : `${(visibleTicketPage - 1) * TICKETS_PER_PAGE + 1}-${Math.min(
+                          visibleTicketPage * TICKETS_PER_PAGE,
+                          filteredTickets.length,
+                        )} of ${filteredTickets.length} shown`}
+                  </span>
                 </div>
                 <div className="space-y-3">
-                  {filteredTickets.map((ticket) => (
+                  {paginatedTickets.map((ticket) => (
                     <TicketCard
                       key={ticket.id}
                       ticket={ticket}
@@ -489,6 +518,14 @@ export default function ProjectsWorkspace() {
                     <div className="text-sm font-medium text-slate-900">No tickets to show</div>
                     <p className="mt-1 text-sm text-slate-500">Create a ticket or adjust the search filter.</p>
                   </div>
+                ) : null}
+                {filteredTickets.length > TICKETS_PER_PAGE ? (
+                  <Pagination
+                    page={visibleTicketPage}
+                    totalPages={totalTicketPages}
+                    onPrevious={() => setTicketPage((current) => Math.max(1, current - 1))}
+                    onNext={() => setTicketPage((current) => Math.min(totalTicketPages, current + 1))}
+                  />
                 ) : null}
               </section>
             </>
@@ -547,6 +584,42 @@ function ProjectHeader({ project }: { project: ProjectInfo }) {
         <div className="mt-3 text-xs text-slate-400">Created at {formatDate(project.created_at)}</div>
       </div>
     </section>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  onPrevious,
+  onNext,
+}: {
+  page: number;
+  totalPages: number;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <button
+        type="button"
+        onClick={onPrevious}
+        disabled={page <= 1}
+        className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Previous
+      </button>
+      <div className="text-sm font-medium text-slate-600">
+        Page {page} of {totalPages}
+      </div>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={page >= totalPages}
+        className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Next
+      </button>
+    </div>
   );
 }
 
