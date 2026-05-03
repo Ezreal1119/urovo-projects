@@ -170,6 +170,7 @@ export async function readDashboard(): Promise<DashboardData> {
       projects.map(async (item) => ({
         ...item,
         tickets: await readTickets(item.folder),
+        requirements: await readRequirements(item.folder),
       })),
     ),
   };

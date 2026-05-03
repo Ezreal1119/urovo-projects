@@ -76,6 +76,7 @@ type ProjectGroup = {
 
 type ViewMode = "dashboard" | "project";
 type ProjectMode = "overview" | "tickets" | "requirements";
+type DashboardMode = "tickets" | "requirements";
 
 type TicketFilter = "all" | "active" | "pending_internal" | "urgent";
 
@@ -94,6 +95,12 @@ type DashboardTicket = {
   folder: string;
   project: ProjectInfo;
   ticket: Ticket;
+};
+
+type DashboardRequirement = {
+  folder: string;
+  project: ProjectInfo;
+  requirement: Requirement;
 };
 
 type LinkedRequirementSummary = Pick<Requirement, "id" | "title">;
@@ -201,6 +208,7 @@ const eventRoleStyles: Record<EventRole, string> = {
 export default function ProjectsWorkspace() {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [projectMode, setProjectMode] = useState<ProjectMode>("tickets");
+  const [dashboardMode, setDashboardMode] = useState<DashboardMode>("tickets");
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(
     null,
@@ -222,6 +230,7 @@ export default function ProjectsWorkspace() {
   const [dashboardFilter, setDashboardFilter] =
     useState<DashboardFilter>("all");
   const [dashboardTicketPage, setDashboardTicketPage] = useState(1);
+  const [dashboardRequirementPage, setDashboardRequirementPage] = useState(1);
   const [ticketPage, setTicketPage] = useState(1);
   const [requirementPage, setRequirementPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -402,10 +411,23 @@ export default function ProjectsWorkspace() {
     () => flattenDashboardTickets(dashboardData),
     [dashboardData],
   );
+  const dashboardRequirements = useMemo(
+    () => flattenDashboardRequirements(dashboardData),
+    [dashboardData],
+  );
   const filteredDashboardTickets = useMemo(
     () =>
       filterDashboardTickets(dashboardTickets, dashboardFilter, globalQuery),
     [dashboardTickets, dashboardFilter, globalQuery],
+  );
+  const filteredDashboardRequirements = useMemo(
+    () =>
+      filterDashboardRequirements(
+        dashboardRequirements,
+        dashboardFilter,
+        globalQuery,
+      ),
+    [dashboardRequirements, dashboardFilter, globalQuery],
   );
   const totalDashboardTicketPages = Math.max(
     1,
@@ -418,6 +440,18 @@ export default function ProjectsWorkspace() {
   const paginatedDashboardTickets = filteredDashboardTickets.slice(
     (visibleDashboardTicketPage - 1) * TICKETS_PER_PAGE,
     visibleDashboardTicketPage * TICKETS_PER_PAGE,
+  );
+  const totalDashboardRequirementPages = Math.max(
+    1,
+    Math.ceil(filteredDashboardRequirements.length / TICKETS_PER_PAGE),
+  );
+  const visibleDashboardRequirementPage = Math.min(
+    dashboardRequirementPage,
+    totalDashboardRequirementPages,
+  );
+  const paginatedDashboardRequirements = filteredDashboardRequirements.slice(
+    (visibleDashboardRequirementPage - 1) * TICKETS_PER_PAGE,
+    visibleDashboardRequirementPage * TICKETS_PER_PAGE,
   );
 
   function applyTicketFilter(filter: TicketFilter) {
@@ -433,6 +467,7 @@ export default function ProjectsWorkspace() {
     setTicketPage(1);
     setRequirementPage(1);
     setDashboardTicketPage(1);
+    setDashboardRequirementPage(1);
   }
 
   function canDiscardTicketChanges() {
@@ -531,7 +566,7 @@ export default function ProjectsWorkspace() {
 
   async function loadProject(
     folder: string,
-    options: { ticketId?: string } = {},
+    options: { ticketId?: string; requirementId?: string } = {},
   ) {
     if (!canLeaveProjectWork()) {
       return;
@@ -577,8 +612,11 @@ export default function ProjectsWorkspace() {
         return;
       }
       setRequirements(requirementsData.requirements);
-      setProjectMode(options.ticketId ? "tickets" : "overview");
+      setProjectMode(
+        options.ticketId ? "tickets" : options.requirementId ? "requirements" : "overview",
+      );
       setSelectedTicketId(options.ticketId ?? "");
+      setSelectedRequirementId(options.requirementId ?? "");
       rememberRecentProject(folder, data.project.project_name);
     } catch (requestError) {
       if (loadProjectRequestId.current !== requestId) {
@@ -637,6 +675,10 @@ export default function ProjectsWorkspace() {
 
   function openDashboardTicket(item: DashboardTicket) {
     void loadProject(item.folder, { ticketId: item.ticket.id });
+  }
+
+  function openDashboardRequirement(item: DashboardRequirement) {
+    void loadProject(item.folder, { requirementId: item.requirement.id });
   }
 
   useEffect(() => {
@@ -863,6 +905,7 @@ export default function ProjectsWorkspace() {
       setRequirementPage(1);
       setSelectedRequirementId(data.requirement.id);
       setShowNewRequirement(false);
+      refreshDashboardQuietly();
     } finally {
       setSaving(false);
     }
@@ -978,6 +1021,7 @@ export default function ProjectsWorkspace() {
           requirement.id === requirementId ? data.requirement : requirement,
         ),
       );
+      refreshDashboardQuietly();
       showToast("Requirement changes saved.");
     } finally {
       setSaving(false);
@@ -1002,6 +1046,7 @@ export default function ProjectsWorkspace() {
         current.filter((requirement) => requirement.id !== requirementId),
       );
       setSelectedRequirementId("");
+      refreshDashboardQuietly();
     } catch (error) {
       if (
         error instanceof ApiError &&
@@ -1040,6 +1085,7 @@ export default function ProjectsWorkspace() {
           requirement.id === requirementId ? data.requirement : requirement,
         ),
       );
+      refreshDashboardQuietly();
     } finally {
       setSaving(false);
     }
@@ -1064,6 +1110,7 @@ export default function ProjectsWorkspace() {
           requirement.id === requirementId ? data.requirement : requirement,
         ),
       );
+      refreshDashboardQuietly();
     } finally {
       setSaving(false);
     }
@@ -1084,6 +1131,7 @@ export default function ProjectsWorkspace() {
           requirement.id === requirementId ? data.requirement : requirement,
         ),
       );
+      refreshDashboardQuietly();
     } finally {
       setSaving(false);
     }
@@ -1174,7 +1222,9 @@ export default function ProjectsWorkspace() {
         <label className="relative hidden w-full max-w-md md:block">
           <span className="sr-only">
             {viewMode === "dashboard"
-              ? "Search all tickets"
+              ? dashboardMode === "requirements"
+                ? "Search all requirements"
+                : "Search all tickets"
               : projectMode === "overview"
                 ? "Search demand"
                 : projectMode === "requirements"
@@ -1187,7 +1237,9 @@ export default function ProjectsWorkspace() {
             className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
             placeholder={
               viewMode === "dashboard"
-                ? "Search all tickets"
+                ? dashboardMode === "requirements"
+                  ? "Search all requirements"
+                  : "Search all tickets"
                 : projectMode === "overview"
                   ? "Search demand"
                   : projectMode === "requirements"
@@ -1258,26 +1310,56 @@ export default function ProjectsWorkspace() {
           {viewMode === "dashboard" ? (
             <DashboardView
               data={dashboardData}
+              mode={dashboardMode}
+              onModeChange={(mode) => {
+                setDashboardMode(mode);
+                setDashboardFilter("all");
+                setDashboardTicketPage(1);
+                setDashboardRequirementPage(1);
+              }}
               tickets={paginatedDashboardTickets}
               ticketCount={filteredDashboardTickets.length}
-              page={visibleDashboardTicketPage}
-              totalPages={totalDashboardTicketPages}
+              requirements={paginatedDashboardRequirements}
+              requirementCount={filteredDashboardRequirements.length}
+              page={
+                dashboardMode === "requirements"
+                  ? visibleDashboardRequirementPage
+                  : visibleDashboardTicketPage
+              }
+              totalPages={
+                dashboardMode === "requirements"
+                  ? totalDashboardRequirementPages
+                  : totalDashboardTicketPages
+              }
               allTickets={dashboardTickets}
+              allRequirements={dashboardRequirements}
               activeFilter={dashboardFilter}
               onFilterChange={(filter) => {
                 setDashboardFilter(filter);
                 setDashboardTicketPage(1);
+                setDashboardRequirementPage(1);
               }}
               onPreviousPage={() =>
-                setDashboardTicketPage((current) => Math.max(1, current - 1))
+                dashboardMode === "requirements"
+                  ? setDashboardRequirementPage((current) =>
+                      Math.max(1, current - 1),
+                    )
+                  : setDashboardTicketPage((current) =>
+                      Math.max(1, current - 1),
+                    )
               }
               onNextPage={() =>
-                setDashboardTicketPage((current) =>
-                  Math.min(totalDashboardTicketPages, current + 1),
-                )
+                dashboardMode === "requirements"
+                  ? setDashboardRequirementPage((current) =>
+                      Math.min(totalDashboardRequirementPages, current + 1),
+                    )
+                  : setDashboardTicketPage((current) =>
+                      Math.min(totalDashboardTicketPages, current + 1),
+                    )
               }
               onOpenProject={(folder) => void loadProject(folder)}
               onOpenTicket={openDashboardTicket}
+              onOpenRequirement={openDashboardRequirement}
             />
           ) : selectedProject ? (
             <>
@@ -2172,49 +2254,89 @@ function RequirementCard({
 
 function DashboardView({
   data,
+  mode,
+  onModeChange,
   tickets,
   ticketCount,
+  requirements,
+  requirementCount,
   page,
   totalPages,
   allTickets,
+  allRequirements,
   activeFilter,
   onFilterChange,
   onPreviousPage,
   onNextPage,
   onOpenProject,
   onOpenTicket,
+  onOpenRequirement,
 }: {
   data: DashboardData | null;
+  mode: DashboardMode;
+  onModeChange: (mode: DashboardMode) => void;
   tickets: DashboardTicket[];
   ticketCount: number;
+  requirements: DashboardRequirement[];
+  requirementCount: number;
   page: number;
   totalPages: number;
   allTickets: DashboardTicket[];
+  allRequirements: DashboardRequirement[];
   activeFilter: DashboardFilter;
   onFilterChange: (filter: DashboardFilter) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
   onOpenProject: (folder: string) => void;
   onOpenTicket: (item: DashboardTicket) => void;
+  onOpenRequirement: (item: DashboardRequirement) => void;
 }) {
   const metrics = dashboardMetrics(allTickets);
-  const topProjects = (data?.projects ?? [])
-    .map((project) => ({
-      ...project,
-      active: project.tickets.filter((ticket) => ticket.status !== "resolved")
-        .length,
-      urgent: project.tickets.filter((ticket) => ticket.priority === "urgent")
-        .length,
-    }))
-    .sort(
-      (a, b) =>
-        b.active - a.active ||
-        b.urgent - a.urgent ||
-        a.project.project_name.localeCompare(b.project.project_name),
-    )
-    .slice(0, 6);
-  const recentActivity = [...allTickets]
+  const requirementMetrics = dashboardRequirementMetrics(allRequirements);
+  const topProjects =
+    mode === "requirements"
+      ? (data?.projects ?? [])
+          .map((project) => ({
+            ...project,
+            active: project.requirements.filter(
+              (requirement) =>
+                ["in_progress", "testing"].includes(requirement.status),
+            ).length,
+            urgent: project.requirements.filter(
+              (requirement) => requirement.status === "in_progress",
+            ).length,
+          }))
+          .sort(
+            (a, b) =>
+              b.active - a.active ||
+              b.urgent - a.urgent ||
+              a.project.project_name.localeCompare(b.project.project_name),
+          )
+          .slice(0, 3)
+      : (data?.projects ?? [])
+          .map((project) => ({
+            ...project,
+            active: project.tickets.filter(
+              (ticket) => ticket.status !== "resolved",
+            ).length,
+            urgent: project.tickets.filter(
+              (ticket) => ticket.priority === "urgent",
+            ).length,
+          }))
+          .sort(
+            (a, b) =>
+              b.active - a.active ||
+              b.urgent - a.urgent ||
+              a.project.project_name.localeCompare(b.project.project_name),
+          )
+          .slice(0, 6);
+  const recentTicketActivity = [...allTickets]
     .sort((a, b) => b.ticket.updated_at.localeCompare(a.ticket.updated_at))
+    .slice(0, 8);
+  const recentRequirementActivity = [...allRequirements]
+    .sort((a, b) =>
+      b.requirement.last_updated.localeCompare(a.requirement.last_updated),
+    )
     .slice(0, 8);
 
   return (
@@ -2226,9 +2348,25 @@ function DashboardView({
               Dashboard
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Monitor every support ticket across {data?.projects.length ?? 0}{" "}
-              projects.
+              Monitor every {mode === "requirements" ? "requirement" : "support ticket"} across{" "}
+              {data?.projects.length ?? 0} projects.
             </p>
+          </div>
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+            {(["tickets", "requirements"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => onModeChange(item)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                  mode === item
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-950"
+                }`}
+              >
+                {dashboardModeLabel(item)}
+              </button>
+            ))}
           </div>
         </div>
       </section>
@@ -2238,32 +2376,71 @@ function DashboardView({
           <ChartPanel title="Status">
             <PieChart
               onTotalClick={() => onFilterChange("all")}
-              items={[
-                {
-                  label: "[Pending]: Internal",
-                  value: metrics.pendingInternal,
-                  color: "#fb923c",
-                  active: activeFilter === "pending_internal",
-                  onClick: () => onFilterChange("pending_internal"),
-                },
-                {
-                  label: "[Pending]: Customer",
-                  value: metrics.pendingCustomer,
-                  color: "#fbbf24",
-                  active: activeFilter === "pending_customer",
-                  onClick: () => onFilterChange("pending_customer"),
-                },
-                {
-                  label: "[Resolved]",
-                  value: metrics.resolved,
-                  color: "#10b981",
-                  active: activeFilter === "resolved",
-                  onClick: () => onFilterChange("resolved"),
-                },
-              ]}
+              emptyText={
+                mode === "requirements"
+                  ? "No requirement data for this chart."
+                  : "No ticket data for this chart."
+              }
+              items={
+                mode === "requirements"
+                  ? [
+                      {
+                        label: "Pending",
+                        value: requirementMetrics.pending,
+                        color: "#94a3b8",
+                        active: activeFilter === "pending_internal",
+                        onClick: () => onFilterChange("pending_internal"),
+                      },
+                      {
+                        label: "In Progress",
+                        value: requirementMetrics.inProgress,
+                        color: "#3b82f6",
+                        active: activeFilter === "pending_customer",
+                        onClick: () => onFilterChange("pending_customer"),
+                      },
+                      {
+                        label: "Testing",
+                        value: requirementMetrics.testing,
+                        color: "#8b5cf6",
+                        active: activeFilter === "urgent",
+                        onClick: () => onFilterChange("urgent"),
+                      },
+                      {
+                        label: "Finished",
+                        value: requirementMetrics.finished,
+                        color: "#10b981",
+                        active: activeFilter === "resolved",
+                        onClick: () => onFilterChange("resolved"),
+                      },
+                    ]
+                  : [
+                      {
+                        label: "[Pending]: Internal",
+                        value: metrics.pendingInternal,
+                        color: "#fb923c",
+                        active: activeFilter === "pending_internal",
+                        onClick: () => onFilterChange("pending_internal"),
+                      },
+                      {
+                        label: "[Pending]: Customer",
+                        value: metrics.pendingCustomer,
+                        color: "#fbbf24",
+                        active: activeFilter === "pending_customer",
+                        onClick: () => onFilterChange("pending_customer"),
+                      },
+                      {
+                        label: "[Resolved]",
+                        value: metrics.resolved,
+                        color: "#10b981",
+                        active: activeFilter === "resolved",
+                        onClick: () => onFilterChange("resolved"),
+                      },
+                    ]
+              }
             />
           </ChartPanel>
-          <ChartPanel title="Priority">
+          {mode === "tickets" ? (
+            <ChartPanel title="Priority">
             <PieChart
               onTotalClick={() => onFilterChange("all")}
               items={[
@@ -2303,7 +2480,8 @@ function DashboardView({
                 },
               ]}
             />
-          </ChartPanel>
+            </ChartPanel>
+          ) : null}
         </div>
         <div className="space-y-4">
           <ChartPanel title="Top active projects">
@@ -2328,8 +2506,15 @@ function DashboardView({
                       <div className="text-sm font-semibold text-slate-950">
                         {project.active} active
                       </div>
-                      <div className="text-xs text-red-600">
-                        {project.urgent} urgent
+                      <div
+                        className={`text-xs ${
+                          mode === "requirements"
+                            ? "text-blue-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {project.urgent}{" "}
+                        {mode === "requirements" ? "in progress" : "urgent"}
                       </div>
                     </div>
                   </div>
@@ -2344,20 +2529,34 @@ function DashboardView({
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <ChartPanel title={`${dashboardFilterLabel(activeFilter)} tickets`}>
+        <ChartPanel
+          title={`${dashboardFilterLabel(activeFilter, mode)} ${mode}`}
+        >
           <div className="space-y-2">
-            {tickets.map((item) => (
-              <DashboardTicketRow
-                key={`${item.folder}-${item.ticket.id}`}
-                item={item}
-                onClick={() => onOpenTicket(item)}
+            {mode === "requirements"
+              ? requirements.map((item) => (
+                  <DashboardRequirementRow
+                    key={`${item.folder}-${item.requirement.id}`}
+                    item={item}
+                    onClick={() => onOpenRequirement(item)}
+                  />
+                ))
+              : tickets.map((item) => (
+                  <DashboardTicketRow
+                    key={`${item.folder}-${item.ticket.id}`}
+                    item={item}
+                    onClick={() => onOpenTicket(item)}
+                  />
+                ))}
+            {(mode === "requirements" ? requirementCount : ticketCount) ===
+            0 ? (
+              <EmptyState
+                text={`No ${mode} match this dashboard filter.`}
               />
-            ))}
-            {ticketCount === 0 ? (
-              <EmptyState text="No tickets match this dashboard filter." />
             ) : null}
           </div>
-          {ticketCount > TICKETS_PER_PAGE ? (
+          {(mode === "requirements" ? requirementCount : ticketCount) >
+          TICKETS_PER_PAGE ? (
             <Pagination
               page={page}
               totalPages={totalPages}
@@ -2368,28 +2567,53 @@ function DashboardView({
         </ChartPanel>
         <ChartPanel title="Recent activity">
           <div className="space-y-2">
-            {recentActivity.map((item) => (
-              <button
-                key={`${item.folder}-${item.ticket.id}`}
-                type="button"
-                onClick={() => onOpenTicket(item)}
-                className="w-full rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
-              >
-                <div className="truncate text-sm font-semibold text-slate-950">
-                  [{item.ticket.id}] {item.ticket.title}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-slate-500">
-                    {item.project.project_name}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    Updated {formatDateTimeFull(item.ticket.updated_at)}
-                  </span>
-                </div>
-              </button>
-            ))}
-            {recentActivity.length === 0 ? (
-              <EmptyState text="No recent ticket activity." />
+            {mode === "requirements"
+              ? recentRequirementActivity.map((item) => (
+                  <button
+                    key={`${item.folder}-${item.requirement.id}`}
+                    type="button"
+                    onClick={() => onOpenRequirement(item)}
+                    className="w-full rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+                  >
+                    <div className="truncate text-sm font-semibold text-slate-950">
+                      [{item.requirement.id}] {item.requirement.title}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-500">
+                        {item.project.project_name}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        Updated {formatDateTimeFull(
+                          item.requirement.last_updated,
+                        )}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              : recentTicketActivity.map((item) => (
+                  <button
+                    key={`${item.folder}-${item.ticket.id}`}
+                    type="button"
+                    onClick={() => onOpenTicket(item)}
+                    className="w-full rounded-lg border border-slate-200 p-3 text-left transition hover:bg-slate-50"
+                  >
+                    <div className="truncate text-sm font-semibold text-slate-950">
+                      [{item.ticket.id}] {item.ticket.title}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-500">
+                        {item.project.project_name}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        Updated {formatDateTimeFull(item.ticket.updated_at)}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+            {(mode === "requirements"
+              ? recentRequirementActivity.length
+              : recentTicketActivity.length) === 0 ? (
+              <EmptyState text={`No recent ${mode.slice(0, -1)} activity.`} />
             ) : null}
           </div>
         </ChartPanel>
@@ -2416,6 +2640,7 @@ function ChartPanel({
 function PieChart({
   items,
   onTotalClick,
+  emptyText = "No ticket data for this chart.",
 }: {
   items: {
     label: string;
@@ -2425,6 +2650,7 @@ function PieChart({
     onClick: () => void;
   }[];
   onTotalClick: () => void;
+  emptyText?: string;
 }) {
   const total = items.reduce((sum, item) => sum + item.value, 0);
   const radius = 42;
@@ -2514,7 +2740,7 @@ function PieChart({
       </div>
       {total === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500 sm:col-span-2">
-          No ticket data for this chart.
+          {emptyText}
         </div>
       ) : null}
     </div>
@@ -2553,6 +2779,41 @@ function DashboardTicketRow({
       </div>
       <div className="mt-2 text-xs text-slate-400">
         Updated {formatDateTimeFull(item.ticket.updated_at)}
+      </div>
+    </button>
+  );
+}
+
+function DashboardRequirementRow({
+  item,
+  onClick,
+}: {
+  item: DashboardRequirement;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="line-clamp-2 text-sm font-semibold text-slate-950">
+            [{item.requirement.id}] {item.requirement.title}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {item.project.project_name}
+          </div>
+        </div>
+        <RequirementStatusBadge status={item.requirement.status} />
+      </div>
+      <div className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">
+        {item.requirement.details || "No details."}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+        <span>Updated {formatDateTimeFull(item.requirement.last_updated)}</span>
+        <span>{item.requirement.timeline.length} updates</span>
       </div>
     </button>
   );
@@ -4568,6 +4829,18 @@ function flattenDashboardTickets(
   );
 }
 
+function flattenDashboardRequirements(
+  data: DashboardData | null,
+): DashboardRequirement[] {
+  return (data?.projects ?? []).flatMap((project) =>
+    project.requirements.map((requirement) => ({
+      folder: project.folder,
+      project: project.project,
+      requirement,
+    })),
+  );
+}
+
 function filterDashboardTickets(
   tickets: DashboardTicket[],
   filter: DashboardFilter,
@@ -4612,6 +4885,49 @@ function filterDashboardTickets(
   });
 }
 
+function filterDashboardRequirements(
+  requirements: DashboardRequirement[],
+  filter: DashboardFilter,
+  query: string,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  return requirements.filter((item) => {
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "active" &&
+        ["in_progress", "testing"].includes(item.requirement.status)) ||
+      (filter === "pending_internal" &&
+        item.requirement.status === "pending") ||
+      (filter === "pending_customer" &&
+        item.requirement.status === "in_progress") ||
+      (filter === "urgent" && item.requirement.status === "testing") ||
+      (filter === "resolved" && item.requirement.status === "finished");
+
+    if (!matchesFilter) {
+      return false;
+    }
+
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return [
+      item.project.project_name,
+      item.folder,
+      item.requirement.id,
+      item.requirement.title,
+      item.requirement.details,
+      item.requirement.status,
+      requirementStatusLabels[item.requirement.status],
+      ...item.requirement.related_tickets,
+      ...item.requirement.timeline.map((entry) => `${entry.time} ${entry.remark}`),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+}
+
 function dashboardMetrics(tickets: DashboardTicket[]) {
   return {
     total: tickets.length,
@@ -4628,7 +4944,53 @@ function dashboardMetrics(tickets: DashboardTicket[]) {
   };
 }
 
-function dashboardFilterLabel(filter: DashboardFilter) {
+function dashboardRequirementMetrics(requirements: DashboardRequirement[]) {
+  return {
+    total: requirements.length,
+    active: requirements.filter(
+      (item) => ["in_progress", "testing"].includes(item.requirement.status),
+    ).length,
+    pending: requirements.filter(
+      (item) => item.requirement.status === "pending",
+    ).length,
+    inProgress: requirements.filter(
+      (item) => item.requirement.status === "in_progress",
+    ).length,
+    testing: requirements.filter(
+      (item) => item.requirement.status === "testing",
+    ).length,
+    finished: requirements.filter(
+      (item) => item.requirement.status === "finished",
+    ).length,
+  };
+}
+
+function dashboardModeLabel(mode: DashboardMode) {
+  const labels: Record<DashboardMode, string> = {
+    tickets: "Tickets",
+    requirements: "Requirements",
+  };
+  return labels[mode];
+}
+
+function dashboardFilterLabel(
+  filter: DashboardFilter,
+  mode: DashboardMode = "tickets",
+) {
+  if (mode === "requirements") {
+    const labels: Record<DashboardFilter, string> = {
+      all: "All",
+      active: "Active",
+      pending_internal: "Pending",
+      pending_customer: "In progress",
+      urgent: "Testing",
+      priority_low: "Low priority",
+      priority_medium: "Medium priority",
+      priority_high: "High priority",
+      resolved: "Finished",
+    };
+    return labels[filter];
+  }
   const labels: Record<DashboardFilter, string> = {
     all: "All",
     active: "Active",

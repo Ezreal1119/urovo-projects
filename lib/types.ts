@@ -32,6 +32,7 @@ export type ProjectListItem = {
 
 export type DashboardProject = ProjectListItem & {
   tickets: Ticket[];
+  requirements: Requirement[];
 };
 
 export type DashboardData = {
