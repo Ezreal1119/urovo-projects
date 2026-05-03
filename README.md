@@ -2,6 +2,35 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Create `.env.local` and configure the local project data root:
+
+```env
+PROJECTS_ROOT=/absolute/path/to/projects/root
+```
+
+### Cloudinary asset uploads
+
+This app can upload ticket and requirement assets to Cloudinary. To enable it:
+
+1. Create or sign in to a Cloudinary account.
+2. Open the Cloudinary Console dashboard.
+3. Copy your `cloud_name`, `api_key`, and `api_secret`.
+4. Add them to `.env.local`:
+
+```env
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+```
+
+5. Restart the dev server after changing `.env.local`.
+
+Useful Cloudinary references:
+
+- [Node.js SDK](https://cloudinary.com/documentation/node_integration)
+- [Admin API](https://cloudinary.com/documentation/admin_api)
+- [Delete assets](https://cloudinary.com/documentation/delete_assets)
+
 First, run the development server:
 
 ```bash

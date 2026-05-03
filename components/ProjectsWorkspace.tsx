@@ -134,8 +134,24 @@ type ProjectJsonDraft = {
   created_at: string;
 };
 
+type ProjectAsset = {
+  publicId: string;
+  resourceType: "image" | "video" | "raw";
+  type: string;
+  format: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+  createdAt: string;
+  secureUrl: string;
+  downloadUrl: string;
+  previewUrl?: string;
+  originalFilename: string;
+};
+
 const TICKETS_PER_PAGE = 10;
 const RECENT_PROJECTS_KEY = "urovo-projects:recent-projects";
+const MAX_ASSET_BYTES = 100 * 1024 * 1024;
 
 const emptyTicketDraft: TicketDraft = {
   title: "",
@@ -266,8 +282,10 @@ export default function ProjectsWorkspace() {
   const [selectedRequirementDirty, setSelectedRequirementDirty] =
     useState(false);
   const [overviewDirty, setOverviewDirty] = useState(false);
-  const [selectedOverviewRequirementDirty, setSelectedOverviewRequirementDirty] =
-    useState(false);
+  const [
+    selectedOverviewRequirementDirty,
+    setSelectedOverviewRequirementDirty,
+  ] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [ticketDeleteBlocker, setTicketDeleteBlocker] =
     useState<TicketDeleteBlocker | null>(null);
@@ -632,7 +650,11 @@ export default function ProjectsWorkspace() {
       }
       setRequirements(requirementsData.requirements);
       setProjectMode(
-        options.ticketId ? "tickets" : options.requirementId ? "requirements" : "overview",
+        options.ticketId
+          ? "tickets"
+          : options.requirementId
+            ? "requirements"
+            : "overview",
       );
       setSelectedTicketId(options.ticketId ?? "");
       setSelectedRequirementId(options.requirementId ?? "");
@@ -1014,7 +1036,11 @@ export default function ProjectsWorkspace() {
   }
 
   async function deleteOverviewRequirement(requirementId: string) {
-    if (!confirm("Delete this overview item? This writes directly to overview.json.")) {
+    if (
+      !confirm(
+        "Delete this overview item? This writes directly to overview.json.",
+      )
+    ) {
       return;
     }
     setSaving(true);
@@ -1184,7 +1210,9 @@ export default function ProjectsWorkspace() {
   }
 
   function openLinkedRequirement(requirementId: string) {
-    const requirement = requirements.find((current) => current.id === requirementId);
+    const requirement = requirements.find(
+      (current) => current.id === requirementId,
+    );
     if (!requirement) {
       return;
     }
@@ -1232,85 +1260,85 @@ export default function ProjectsWorkspace() {
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
       <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 shadow-sm shadow-slate-200/40 backdrop-blur">
         <div className="flex min-h-16 items-center gap-3 px-4 py-2 lg:px-5">
-        <button
-          type="button"
-          onClick={openDashboard}
-          className="group flex min-w-0 items-center gap-3 rounded-xl px-2 py-1.5 text-left transition hover:bg-slate-50"
-          aria-label="Open dashboard"
-        >
-          <Image
-            src="/patrick.png"
-            alt="Urovo Projects"
-            width={44}
-            height={44}
-            className="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-200 transition group-hover:ring-slate-300"
-            priority
-          />
-          <div className="min-w-0">
-            <div className="truncate text-base font-semibold tracking-tight text-slate-950">
-              Urovo Projects
+          <button
+            type="button"
+            onClick={openDashboard}
+            className="group flex min-w-0 items-center gap-3 rounded-xl px-2 py-1.5 text-left transition hover:bg-slate-50"
+            aria-label="Open dashboard"
+          >
+            <Image
+              src="/patrick.png"
+              alt="Urovo Projects"
+              width={44}
+              height={44}
+              className="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-200 transition group-hover:ring-slate-300"
+              priority
+            />
+            <div className="min-w-0">
+              <div className="truncate text-base font-semibold tracking-tight text-slate-950">
+                Urovo Projects
+              </div>
+              <div className="truncate text-xs font-medium text-slate-500">
+                {viewMode === "dashboard"
+                  ? "Dashboard"
+                  : selectedProject?.project_name || "Project workspace"}
+              </div>
             </div>
-            <div className="truncate text-xs font-medium text-slate-500">
-              {viewMode === "dashboard"
-                ? "Dashboard"
-                : selectedProject?.project_name || "Project workspace"}
-            </div>
-          </div>
-        </button>
+          </button>
 
-        <div className="hidden h-9 shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 lg:flex">
-          {viewMode === "dashboard"
-            ? dashboardModeLabel(dashboardMode)
-            : projectModeLabel(projectMode)}
-        </div>
-
-        <label className="relative ml-auto hidden w-full max-w-lg md:block">
-          <span className="sr-only">
+          <div className="hidden h-9 shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 lg:flex">
             {viewMode === "dashboard"
-              ? dashboardMode === "requirements"
-                ? "Search all requirements"
-                : "Search all tickets"
-              : projectMode === "overview"
-                ? "Search demand"
-                : projectMode === "requirements"
-                ? "Search requirements"
-                : "Search tickets"}
-          </span>
-          <input
-            value={globalQuery}
-            onChange={(event) => updateGlobalQuery(event.target.value)}
-            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-sm"
-            placeholder={
-              viewMode === "dashboard"
+              ? dashboardModeLabel(dashboardMode)
+              : projectModeLabel(projectMode)}
+          </div>
+
+          <label className="relative ml-auto hidden w-full max-w-lg md:block">
+            <span className="sr-only">
+              {viewMode === "dashboard"
                 ? dashboardMode === "requirements"
                   ? "Search all requirements"
                   : "Search all tickets"
                 : projectMode === "overview"
                   ? "Search demand"
                   : projectMode === "requirements"
-                  ? "Search requirements"
-                  : "Search tickets"
-            }
-          />
-        </label>
-        {viewMode === "project" && selectedFolder ? (
-          <button
-            onClick={() =>
-              projectMode === "overview"
-                ? setShowNewOverviewRequirement(true)
+                    ? "Search requirements"
+                    : "Search tickets"}
+            </span>
+            <input
+              value={globalQuery}
+              onChange={(event) => updateGlobalQuery(event.target.value)}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-sm"
+              placeholder={
+                viewMode === "dashboard"
+                  ? dashboardMode === "requirements"
+                    ? "Search all requirements"
+                    : "Search all tickets"
+                  : projectMode === "overview"
+                    ? "Search demand"
+                    : projectMode === "requirements"
+                      ? "Search requirements"
+                      : "Search tickets"
+              }
+            />
+          </label>
+          {viewMode === "project" && selectedFolder ? (
+            <button
+              onClick={() =>
+                projectMode === "overview"
+                  ? setShowNewOverviewRequirement(true)
+                  : projectMode === "requirements"
+                    ? setShowNewRequirement(true)
+                    : setShowNewTicket(true)
+              }
+              className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
+            >
+              {projectMode === "overview"
+                ? "New Demand"
                 : projectMode === "requirements"
-                ? setShowNewRequirement(true)
-                : setShowNewTicket(true)
-            }
-            className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
-          >
-            {projectMode === "overview"
-              ? "New Demand"
-              : projectMode === "requirements"
-                ? "New Requirement"
-                : "New Ticket"}
-          </button>
-        ) : null}
+                  ? "New Requirement"
+                  : "New Ticket"}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -1562,6 +1590,7 @@ export default function ProjectsWorkspace() {
       {selectedTicket ? (
         <TicketDrawer
           ticket={selectedTicket}
+          assetApiPath={`${projectApiPath(selectedFolder)}/tickets/${selectedTicket.id}/assets`}
           saving={saving}
           onClose={closeSelectedTicket}
           onDirtyChange={setSelectedTicketDirty}
@@ -1578,6 +1607,7 @@ export default function ProjectsWorkspace() {
       {selectedRequirement ? (
         <RequirementDrawer
           requirement={selectedRequirement}
+          assetApiPath={`${projectApiPath(selectedFolder)}/requirements/${selectedRequirement.id}/assets`}
           tickets={tickets}
           saving={saving}
           onClose={closeSelectedRequirement}
@@ -1728,7 +1758,8 @@ function TicketDeleteBlockedDialog({
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-300 hover:bg-white"
             >
               <div className="text-sm font-semibold text-slate-950">
-                [{requirement.id}]: {requirement.title || "Untitled requirement"}
+                [{requirement.id}]:{" "}
+                {requirement.title || "Untitled requirement"}
               </div>
               <div className="mt-1 text-xs text-slate-500">
                 Open requirement detail
@@ -2144,9 +2175,7 @@ function DescriptionEditor({
 
   return (
     <div>
-      <div className="mb-1 text-xs font-medium text-slate-600">
-        Description
-      </div>
+      <div className="mb-1 text-xs font-medium text-slate-600">Description</div>
       <div
         onClick={() => {
           setDraft(value);
@@ -2369,9 +2398,8 @@ function DashboardView({
       ? (data?.projects ?? [])
           .map((project) => ({
             ...project,
-            active: project.requirements.filter(
-              (requirement) =>
-                ["in_progress", "testing"].includes(requirement.status),
+            active: project.requirements.filter((requirement) =>
+              ["in_progress", "testing"].includes(requirement.status),
             ).length,
             urgent: project.requirements.filter(
               (requirement) => requirement.status === "in_progress",
@@ -2419,8 +2447,9 @@ function DashboardView({
               Dashboard
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Monitor every {mode === "requirements" ? "requirement" : "support ticket"} across{" "}
-              {data?.projects.length ?? 0} projects.
+              Monitor every{" "}
+              {mode === "requirements" ? "requirement" : "support ticket"}{" "}
+              across {data?.projects.length ?? 0} projects.
             </p>
           </div>
           <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
@@ -2512,45 +2541,45 @@ function DashboardView({
           </ChartPanel>
           {mode === "tickets" ? (
             <ChartPanel title="Priority">
-            <PieChart
-              onTotalClick={() => onFilterChange("all")}
-              items={[
-                {
-                  label: "Low",
-                  value: allTickets.filter(
-                    (item) => item.ticket.priority === "low",
-                  ).length,
-                  color: "#94a3b8",
-                  active: activeFilter === "priority_low",
-                  onClick: () => onFilterChange("priority_low"),
-                },
-                {
-                  label: "Medium",
-                  value: allTickets.filter(
-                    (item) => item.ticket.priority === "medium",
-                  ).length,
-                  color: "#3b82f6",
-                  active: activeFilter === "priority_medium",
-                  onClick: () => onFilterChange("priority_medium"),
-                },
-                {
-                  label: "High",
-                  value: allTickets.filter(
-                    (item) => item.ticket.priority === "high",
-                  ).length,
-                  color: "#fb7185",
-                  active: activeFilter === "priority_high",
-                  onClick: () => onFilterChange("priority_high"),
-                },
-                {
-                  label: "Urgent",
-                  value: metrics.urgent,
-                  color: "#dc2626",
-                  active: activeFilter === "urgent",
-                  onClick: () => onFilterChange("urgent"),
-                },
-              ]}
-            />
+              <PieChart
+                onTotalClick={() => onFilterChange("all")}
+                items={[
+                  {
+                    label: "Low",
+                    value: allTickets.filter(
+                      (item) => item.ticket.priority === "low",
+                    ).length,
+                    color: "#94a3b8",
+                    active: activeFilter === "priority_low",
+                    onClick: () => onFilterChange("priority_low"),
+                  },
+                  {
+                    label: "Medium",
+                    value: allTickets.filter(
+                      (item) => item.ticket.priority === "medium",
+                    ).length,
+                    color: "#3b82f6",
+                    active: activeFilter === "priority_medium",
+                    onClick: () => onFilterChange("priority_medium"),
+                  },
+                  {
+                    label: "High",
+                    value: allTickets.filter(
+                      (item) => item.ticket.priority === "high",
+                    ).length,
+                    color: "#fb7185",
+                    active: activeFilter === "priority_high",
+                    onClick: () => onFilterChange("priority_high"),
+                  },
+                  {
+                    label: "Urgent",
+                    value: metrics.urgent,
+                    color: "#dc2626",
+                    active: activeFilter === "urgent",
+                    onClick: () => onFilterChange("urgent"),
+                  },
+                ]}
+              />
             </ChartPanel>
           ) : null}
         </div>
@@ -2621,9 +2650,7 @@ function DashboardView({
                 ))}
             {(mode === "requirements" ? requirementCount : ticketCount) ===
             0 ? (
-              <EmptyState
-                text={`No ${mode} match this dashboard filter.`}
-              />
+              <EmptyState text={`No ${mode} match this dashboard filter.`} />
             ) : null}
           </div>
           {(mode === "requirements" ? requirementCount : ticketCount) >
@@ -2654,9 +2681,8 @@ function DashboardView({
                         {item.project.project_name}
                       </span>
                       <span className="text-xs text-slate-400">
-                        Updated {formatDateTimeFull(
-                          item.requirement.last_updated,
-                        )}
+                        Updated{" "}
+                        {formatDateTimeFull(item.requirement.last_updated)}
                       </span>
                     </div>
                   </button>
@@ -3244,10 +3270,10 @@ function ProjectJsonGeneratorDialog({
   const dirty = !projectJsonDraftsEqual(draft, emptyProjectJsonDraft);
   const canGenerate = Boolean(
     draft.project_name.trim() &&
-      draft.country.trim() &&
-      draft.customer.trim() &&
-      draft.sales.trim() &&
-      draft.created_at,
+    draft.country.trim() &&
+    draft.customer.trim() &&
+    draft.sales.trim() &&
+    draft.created_at,
   );
 
   function closeDialog() {
@@ -3439,6 +3465,7 @@ function ProjectJsonResultDialog({
 
 function TicketDrawer({
   ticket,
+  assetApiPath,
   saving,
   onClose,
   onDirtyChange,
@@ -3449,6 +3476,7 @@ function TicketDrawer({
   onDeleteEvent,
 }: {
   ticket: Ticket;
+  assetApiPath: string;
   saving: boolean;
   onClose: () => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -3495,6 +3523,7 @@ function TicketDrawer({
             onDirtyChange={onDirtyChange}
             onSubmit={saveTicket}
           />
+          <AssetManager assetApiPath={assetApiPath} />
           <div className="flex justify-end">
             <button
               onClick={onDelete}
@@ -3553,6 +3582,7 @@ function TicketDrawer({
 
 function RequirementDrawer({
   requirement,
+  assetApiPath,
   tickets,
   saving,
   onClose,
@@ -3565,6 +3595,7 @@ function RequirementDrawer({
   onDeleteTimeline,
 }: {
   requirement: Requirement;
+  assetApiPath: string;
   tickets: Ticket[];
   saving: boolean;
   onClose: () => void;
@@ -3613,6 +3644,7 @@ function RequirementDrawer({
             onDirtyChange={onDirtyChange}
             onSubmit={saveRequirement}
           />
+          <AssetManager assetApiPath={assetApiPath} />
 
           {requirement.related_tickets.length > 0 ? (
             <section>
@@ -3677,6 +3709,453 @@ function RequirementDrawer({
           </section>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function AssetManager({ assetApiPath }: { assetApiPath: string }) {
+  const [showUpload, setShowUpload] = useState(false);
+  const [showAssets, setShowAssets] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Assets</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Images, videos, or supporting files stored in Cloudinary.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowUpload(true)}
+            className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+          >
+            Upload Asset
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAssets(true)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            View Assets
+          </button>
+        </div>
+      </div>
+
+      {showUpload ? (
+        <AssetUploadDialog
+          assetApiPath={assetApiPath}
+          onClose={() => setShowUpload(false)}
+          onUploaded={() => setRefreshKey((current) => current + 1)}
+        />
+      ) : null}
+
+      {showAssets ? (
+        <AssetGalleryDialog
+          key={refreshKey}
+          assetApiPath={assetApiPath}
+          onClose={() => setShowAssets(false)}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function AssetUploadDialog({
+  assetApiPath,
+  onClose,
+  onUploaded,
+}: {
+  assetApiPath: string;
+  onClose: () => void;
+  onUploaded: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [statuses, setStatuses] = useState<
+    {
+      name: string;
+      state: "queued" | "uploading" | "uploaded" | "error";
+      message?: string;
+    }[]
+  >([]);
+  const [uploading, setUploading] = useState(false);
+
+  function queueFiles(fileList: FileList | File[]) {
+    const files = Array.from(fileList);
+    if (files.length === 0 || uploading) {
+      return;
+    }
+    void uploadFiles(files);
+  }
+
+  async function uploadFiles(files: File[]) {
+    setUploading(true);
+    setStatuses(files.map((file) => ({ name: file.name, state: "queued" })));
+
+    for (const file of files) {
+      if (file.size > MAX_ASSET_BYTES) {
+        setStatuses((current) =>
+          updateAssetStatus(
+            current,
+            file.name,
+            "error",
+            "File is larger than 100 MB.",
+          ),
+        );
+        continue;
+      }
+
+      setStatuses((current) =>
+        updateAssetStatus(current, file.name, "uploading"),
+      );
+      const formData = new FormData();
+      formData.append("files", file);
+
+      try {
+        await api<{ assets: ProjectAsset[] }>(assetApiPath, {
+          method: "POST",
+          body: formData,
+        });
+        setStatuses((current) =>
+          updateAssetStatus(current, file.name, "uploaded"),
+        );
+        onUploaded();
+      } catch (error) {
+        setStatuses((current) =>
+          updateAssetStatus(
+            current,
+            file.name,
+            "error",
+            (error as Error).message,
+          ),
+        );
+      }
+    }
+
+    setUploading(false);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Upload Asset</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Up to 100 MB per file.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={uploading}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <div
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            queueFiles(event.dataTransfer.files);
+          }}
+          className={`grid min-h-40 place-items-center rounded-lg border border-dashed p-6 text-center transition ${
+            dragging
+              ? "border-slate-500 bg-slate-100"
+              : "border-slate-300 bg-slate-50"
+          }`}
+        >
+          <div>
+            <div className="text-sm font-semibold text-slate-950">
+              Drop assets here
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              Images, videos, or other support files.
+            </p>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+              className="mt-4 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:opacity-60"
+            >
+              Select Files
+            </button>
+            <input
+              ref={inputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files) {
+                  queueFiles(event.target.files);
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        {statuses.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {statuses.map((status) => (
+              <div
+                key={status.name}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 truncate text-slate-700">
+                  {status.name}
+                </span>
+                <span
+                  className={`shrink-0 text-xs font-semibold ${
+                    status.state === "uploaded"
+                      ? "text-emerald-700"
+                      : status.state === "error"
+                        ? "text-red-700"
+                        : "text-slate-500"
+                  }`}
+                  title={status.message}
+                >
+                  {assetStatusLabel(status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Overlay>
+  );
+}
+
+function AssetGalleryDialog({
+  assetApiPath,
+  onClose,
+}: {
+  assetApiPath: string;
+  onClose: () => void;
+}) {
+  const [assets, setAssets] = useState<ProjectAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingPublicId, setDeletingPublicId] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAssets() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await api<{ assets: ProjectAsset[] }>(assetApiPath);
+        if (active) {
+          setAssets(data.assets);
+        }
+      } catch (loadError) {
+        if (active) {
+          setError((loadError as Error).message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadAssets();
+    return () => {
+      active = false;
+    };
+  }, [assetApiPath]);
+
+  async function deleteAsset(asset: ProjectAsset) {
+    if (!confirm(`Delete ${asset.originalFilename} from Cloudinary?`)) {
+      return;
+    }
+
+    setDeletingPublicId(asset.publicId);
+    setError("");
+    try {
+      await api<{ ok: true }>(assetApiPath, {
+        method: "DELETE",
+        body: JSON.stringify({
+          publicId: asset.publicId,
+          resourceType: asset.resourceType,
+        }),
+      });
+      setAssets((current) =>
+        current.filter((currentAsset) => currentAsset.publicId !== asset.publicId),
+      );
+    } catch (deleteError) {
+      setError((deleteError as Error).message);
+    } finally {
+      setDeletingPublicId("");
+    }
+  }
+
+  return (
+    <Overlay>
+      <div className="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+          <div>
+            <h2 className="text-lg font-semibold">Assets</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {loading
+                ? "Loading..."
+                : `${assets.length} asset${assets.length === 1 ? "" : "s"}`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="overflow-auto p-5">
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+
+          {loading ? (
+            <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+              Loading assets...
+            </div>
+          ) : null}
+
+          {!loading && !error && assets.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+              No assets uploaded yet.
+            </div>
+          ) : null}
+
+          {!loading && assets.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {assets.map((asset) => (
+                <AssetCard
+                  key={asset.publicId}
+                  asset={asset}
+                  deleting={deletingPublicId === asset.publicId}
+                  onDelete={() => void deleteAsset(asset)}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+function AssetCard({
+  asset,
+  deleting,
+  onDelete,
+}: {
+  asset: ProjectAsset;
+  deleting: boolean;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {asset.resourceType === "image" && asset.previewUrl ? (
+        <a
+          href={asset.secureUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="block bg-slate-100"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- Cloudinary account host is configured by env at runtime. */}
+          <img
+            src={asset.previewUrl}
+            alt={asset.originalFilename}
+            className="h-44 w-full object-cover"
+          />
+        </a>
+      ) : asset.resourceType === "video" ? (
+        <div className="bg-slate-950">
+          <video
+            src={asset.secureUrl}
+            controls
+            className="h-44 w-full bg-slate-950 object-contain"
+          />
+        </div>
+      ) : (
+        <div className="grid h-44 place-items-center bg-slate-100 px-4 text-center">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-500">
+              {asset.format || "file"}
+            </div>
+            <div className="mt-2 line-clamp-2 text-sm font-medium text-slate-700">
+              {asset.originalFilename}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex min-h-32 flex-col gap-3 p-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-slate-950">
+            {asset.originalFilename}
+          </div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+            <span className="shrink-0">{asset.resourceType}</span>
+            <span className="shrink-0">{formatBytes(asset.bytes)}</span>
+            {asset.createdAt ? (
+              <span className="min-w-0 truncate">
+                {formatDateTimeFull(asset.createdAt)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <a
+            href={asset.secureUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-9 min-w-0 items-center justify-center rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+          >
+            Open
+          </a>
+          <a
+            href={asset.downloadUrl || asset.secureUrl}
+            download={asset.originalFilename}
+            className="inline-flex h-9 min-w-0 items-center justify-center rounded-md bg-slate-950 px-2 text-xs font-medium text-white hover:bg-slate-800"
+          >
+            Download
+          </a>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            className="inline-flex h-9 min-w-0 items-center justify-center rounded-md border border-red-200 px-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4205,7 +4684,9 @@ function TextListEditor({
               <span>{item}</span>
               <button
                 type="button"
-                onClick={() => onChange(values.filter((current) => current !== item))}
+                onClick={() =>
+                  onChange(values.filter((current) => current !== item))
+                }
                 className="text-xs font-medium text-red-600 hover:text-red-700"
               >
                 Remove
@@ -4830,8 +5311,12 @@ function formatRequirementLabel(
   requirementId: string,
   requirements: Requirement[],
 ) {
-  const requirement = requirements.find((current) => current.id === requirementId);
-  return requirement ? `[${requirementId}]: ${requirement.title}` : requirementId;
+  const requirement = requirements.find(
+    (current) => current.id === requirementId,
+  );
+  return requirement
+    ? `[${requirementId}]: ${requirement.title}`
+    : requirementId;
 }
 
 function linkedRequirementRowStyle(requirement: Requirement | undefined) {
@@ -4943,12 +5428,16 @@ function projectApiPath(key: string) {
 }
 
 async function api<T = unknown>(url: string, init?: RequestInit): Promise<T> {
+  const headers =
+    init?.body instanceof FormData
+      ? init?.headers
+      : {
+          "Content-Type": "application/json",
+          ...init?.headers,
+        };
   const response = await fetch(url, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers,
   });
   const data = await response.json();
   if (!response.ok) {
@@ -4966,6 +5455,50 @@ class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+function updateAssetStatus(
+  statuses: {
+    name: string;
+    state: "queued" | "uploading" | "uploaded" | "error";
+    message?: string;
+  }[],
+  name: string,
+  state: "queued" | "uploading" | "uploaded" | "error",
+  message?: string,
+) {
+  return statuses.map((status) =>
+    status.name === name ? { ...status, state, message } : status,
+  );
+}
+
+function assetStatusLabel(status: {
+  state: "queued" | "uploading" | "uploaded" | "error";
+  message?: string;
+}) {
+  if (status.state === "error") {
+    return status.message || "Error";
+  }
+  if (status.state === "uploaded") {
+    return "Uploaded";
+  }
+  if (status.state === "uploading") {
+    return "Uploading...";
+  }
+  return "Queued";
+}
+
+function formatBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
+  const value = bytes / 1024 ** index;
+  return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
 }
 
 function ticketToDraft(ticket: Ticket): TicketDraft {
@@ -5208,7 +5741,9 @@ function filterDashboardRequirements(
       item.requirement.status,
       requirementStatusLabels[item.requirement.status],
       ...item.requirement.related_tickets,
-      ...item.requirement.timeline.map((entry) => `${entry.time} ${entry.remark}`),
+      ...item.requirement.timeline.map(
+        (entry) => `${entry.time} ${entry.remark}`,
+      ),
     ]
       .join(" ")
       .toLowerCase()
@@ -5235,8 +5770,8 @@ function dashboardMetrics(tickets: DashboardTicket[]) {
 function dashboardRequirementMetrics(requirements: DashboardRequirement[]) {
   return {
     total: requirements.length,
-    active: requirements.filter(
-      (item) => ["in_progress", "testing"].includes(item.requirement.status),
+    active: requirements.filter((item) =>
+      ["in_progress", "testing"].includes(item.requirement.status),
     ).length,
     pending: requirements.filter(
       (item) => item.requirement.status === "pending",
@@ -5406,9 +5941,7 @@ function createUuid() {
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
-  const hex = Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  );
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
   return [
     hex.slice(0, 4).join(""),
     hex.slice(4, 6).join(""),

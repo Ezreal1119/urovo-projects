@@ -1,3 +1,4 @@
+import { cloudinaryAssetPrefix, deleteAssetsByPrefix } from "@/lib/cloudinary-assets";
 import {
   projectKeyFromSegments,
   readOverview,
@@ -37,6 +38,7 @@ export async function DELETE(_request: Request, context: Context) {
     const { country, project, requirementId } = await context.params;
     const key = projectKeyFromSegments([country, project]);
     const requirements = await readRequirements(key);
+    const requirement = requirements.find((current) => current.id === requirementId);
     const nextRequirements = requirements.filter((requirement) => requirement.id !== requirementId);
     if (nextRequirements.length === requirements.length) {
       return Response.json({ error: "Requirement not found." }, { status: 404 });
@@ -61,6 +63,9 @@ export async function DELETE(_request: Request, context: Context) {
       );
     }
 
+    await deleteAssetsByPrefix(
+      cloudinaryAssetPrefix(country, project, "requirements", requirement?.uuid || requirementId),
+    );
     await writeRequirements(key, nextRequirements);
     return Response.json({ ok: true });
   } catch (error) {

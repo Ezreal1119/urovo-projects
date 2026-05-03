@@ -1,3 +1,4 @@
+import { cloudinaryAssetPrefix, deleteAssetsByPrefix } from "@/lib/cloudinary-assets";
 import {
   projectKeyFromSegments,
   readRequirements,
@@ -37,6 +38,7 @@ export async function DELETE(_request: Request, context: Context) {
     const { country, project, ticketId } = await context.params;
     const key = projectKeyFromSegments([country, project]);
     const tickets = await readTickets(key);
+    const ticket = tickets.find((current) => current.id === ticketId);
     const nextTickets = tickets.filter((ticket) => ticket.id !== ticketId);
     if (nextTickets.length === tickets.length) {
       return Response.json({ error: "Ticket not found." }, { status: 404 });
@@ -60,6 +62,9 @@ export async function DELETE(_request: Request, context: Context) {
       );
     }
 
+    await deleteAssetsByPrefix(
+      cloudinaryAssetPrefix(country, project, "tickets", ticket?.uuid || ticketId),
+    );
     await writeTickets(key, nextTickets);
     return Response.json({ ok: true });
   } catch (error) {
