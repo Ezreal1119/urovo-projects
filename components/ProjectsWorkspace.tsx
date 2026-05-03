@@ -1726,7 +1726,7 @@ function Pagination({
         disabled={page <= 1}
         className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        Previous
+        Prev
       </button>
       <div className="text-sm font-medium text-slate-600">
         Page {page} of {totalPages}

@@ -24,7 +24,6 @@ export type ProjectInfo = {
   status: string;
   description: string;
   created_at: string;
-  updated_at: string;
 };
 
 export type ProjectListItem = {

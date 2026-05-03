@@ -29,7 +29,6 @@ const DEFAULT_PROJECT: ProjectInfo = {
   status: "active",
   description: "",
   created_at: "",
-  updated_at: "",
 };
 
 export function getProjectsRoot() {
