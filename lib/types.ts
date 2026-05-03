@@ -47,6 +47,7 @@ export type TimelineEvent = {
 
 export type Ticket = {
   id: string;
+  uuid?: string;
   title: string;
   status: TicketStatus;
   priority: TicketPriority;
@@ -57,7 +58,7 @@ export type Ticket = {
   events: TimelineEvent[];
 };
 
-export type TicketInput = Partial<Omit<Ticket, "id" | "created_at" | "updated_at">>;
+export type TicketInput = Partial<Omit<Ticket, "id" | "uuid" | "created_at" | "updated_at">>;
 export type EventInput = Partial<TimelineEvent>;
 
 export type RequirementTimelineItem = {
@@ -67,6 +68,7 @@ export type RequirementTimelineItem = {
 
 export type Requirement = {
   id: string;
+  uuid?: string;
   title: string;
   status: RequirementStatus;
   details: string;
@@ -76,11 +78,12 @@ export type Requirement = {
   last_updated: string;
 };
 
-export type RequirementInput = Partial<Omit<Requirement, "id" | "created_at" | "last_updated">>;
+export type RequirementInput = Partial<Omit<Requirement, "id" | "uuid" | "created_at" | "last_updated">>;
 export type RequirementTimelineInput = Partial<RequirementTimelineItem>;
 
 export type OverviewRequirement = {
   id: string;
+  uuid?: string;
   product: string;
   simple_requirements: string[];
   linked_requirements: string[];
@@ -96,4 +99,4 @@ export type Overview = {
 };
 
 export type OverviewInput = Partial<Omit<Overview, "requirements">>;
-export type OverviewRequirementInput = Partial<Omit<OverviewRequirement, "id" | "created_at">>;
+export type OverviewRequirementInput = Partial<Omit<OverviewRequirement, "id" | "uuid" | "created_at">>;

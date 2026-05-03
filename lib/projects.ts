@@ -248,6 +248,7 @@ export function createOverviewRequirementPayload(
   return normalizeOverviewRequirement(
     {
       id: nextOverviewRequirementId(existing.requirements),
+      uuid: randomUUID(),
       product: cleanText(input.product),
       simple_requirements: normalizeTextList(input.simple_requirements),
       linked_requirements: normalizeRequirementLinks(input.linked_requirements),
@@ -285,6 +286,7 @@ export function createRequirementPayload(input: RequirementInput, existing: Requ
   const now = beijingNowIsoString();
   return normalizeRequirement({
     id: nextRequirementId(existing),
+    uuid: randomUUID(),
     title: cleanText(input.title) || "Untitled requirement",
     status: pickValue(input.status, REQUIREMENT_STATUSES, "in_progress"),
     details: cleanText(input.details),
@@ -331,6 +333,7 @@ export function createTicketPayload(input: TicketInput, existing: Ticket[], proj
   const now = beijingNowIsoString();
   return normalizeTicket({
     id: nextTicketId(existing, projectName),
+    uuid: randomUUID(),
     title: cleanText(input.title) || "Untitled ticket",
     status: pickValue(input.status, STATUSES, "pending_internal"),
     priority: pickValue(input.priority, PRIORITIES, "medium"),
@@ -391,6 +394,7 @@ function normalizeTicket(ticket: Ticket): Ticket {
   const now = beijingNowIsoString();
   return {
     id: cleanText(ticket.id) || "PK-001",
+    uuid: cleanText(ticket.uuid) || undefined,
     title: cleanText(ticket.title) || "Untitled ticket",
     status: pickValue(ticket.status, STATUSES, "pending_internal"),
     priority: pickValue(ticket.priority, PRIORITIES, "medium"),
@@ -418,6 +422,7 @@ function normalizeRequirement(requirement: Partial<Requirement>): Requirement {
   const now = beijingNowIsoString();
   return {
     id: cleanText(requirement.id) || "REQ-001",
+    uuid: cleanText(requirement.uuid) || undefined,
     title: cleanText(requirement.title) || "Untitled requirement",
     status: pickValue(requirement.status, REQUIREMENT_STATUSES, "in_progress"),
     details: cleanText(requirement.details),
@@ -457,6 +462,7 @@ function normalizeOverviewRequirement(
 
   return {
     id: cleanText(requirement.id) || "DEM-001",
+    uuid: cleanText(requirement.uuid) || undefined,
     product,
     simple_requirements: normalizeTextList(requirement.simple_requirements),
     linked_requirements: normalizeRequirementLinks(requirement.linked_requirements),
