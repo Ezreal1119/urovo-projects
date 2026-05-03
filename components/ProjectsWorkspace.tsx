@@ -96,6 +96,13 @@ type DashboardTicket = {
   ticket: Ticket;
 };
 
+type LinkedRequirementSummary = Pick<Requirement, "id" | "title">;
+
+type TicketDeleteBlocker = {
+  ticketId: string;
+  requirements: LinkedRequirementSummary[];
+};
+
 type RecentProject = {
   folder: string;
   projectName: string;
@@ -224,6 +231,8 @@ export default function ProjectsWorkspace() {
   const [selectedOverviewRequirementDirty, setSelectedOverviewRequirementDirty] =
     useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [ticketDeleteBlocker, setTicketDeleteBlocker] =
+    useState<TicketDeleteBlocker | null>(null);
   const loadProjectRequestId = useRef(0);
 
   const selectedTicket =
@@ -741,6 +750,21 @@ export default function ProjectsWorkspace() {
       );
       setSelectedTicketId("");
       refreshDashboardQuietly();
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.data?.code === "TICKET_LINKED_TO_REQUIREMENTS"
+      ) {
+        setTicketDeleteBlocker({
+          ticketId,
+          requirements: Array.isArray(error.data.requirements)
+            ? error.data.requirements
+            : [],
+        });
+        return;
+      }
+      setError((error as Error).message);
     } finally {
       setSaving(false);
     }
@@ -1057,10 +1081,17 @@ export default function ProjectsWorkspace() {
     if (!requirement) {
       return;
     }
-    if (!canDiscardOverviewChanges() || !canDiscardOverviewRequirementChanges()) {
+    if (
+      !canDiscardTicketChanges() ||
+      !canDiscardRequirementChanges() ||
+      !canDiscardOverviewChanges() ||
+      !canDiscardOverviewRequirementChanges()
+    ) {
       return;
     }
     setProjectMode("requirements");
+    setSelectedTicketId("");
+    setSelectedTicketDirty(false);
     setSelectedOverviewRequirementId("");
     setOverviewDirty(false);
     setSelectedOverviewRequirementDirty(false);
@@ -1427,8 +1458,77 @@ export default function ProjectsWorkspace() {
         />
       ) : null}
 
+      {ticketDeleteBlocker ? (
+        <TicketDeleteBlockedDialog
+          blocker={ticketDeleteBlocker}
+          onClose={() => setTicketDeleteBlocker(null)}
+          onOpenRequirement={(requirementId) => {
+            setTicketDeleteBlocker(null);
+            openLinkedRequirement(requirementId);
+          }}
+        />
+      ) : null}
+
       {toast ? <Toast message={toast} /> : null}
     </div>
+  );
+}
+
+function TicketDeleteBlockedDialog({
+  blocker,
+  onClose,
+  onOpenRequirement,
+}: {
+  blocker: TicketDeleteBlocker;
+  onClose: () => void;
+  onOpenRequirement: (requirementId: string) => void;
+}) {
+  return (
+    <Overlay>
+      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">
+              Ticket cannot be deleted
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              [{blocker.ticketId}] is linked to the requirement records below.
+              Remove the related ticket link from each requirement first.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {blocker.requirements.map((requirement) => (
+            <button
+              key={requirement.id}
+              type="button"
+              onClick={() => onOpenRequirement(requirement.id)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-300 hover:bg-white"
+            >
+              <div className="text-sm font-semibold text-slate-950">
+                [{requirement.id}]: {requirement.title || "Untitled requirement"}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                Open requirement detail
+              </div>
+            </button>
+          ))}
+          {blocker.requirements.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+              No requirement details were returned. Refresh and try again.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
@@ -4029,9 +4129,20 @@ async function api<T = unknown>(url: string, init?: RequestInit): Promise<T> {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || "Request failed.");
+    throw new ApiError(data.error || "Request failed.", response.status, data);
   }
   return data as T;
+}
+
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly data: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
 }
 
 function ticketToDraft(ticket: Ticket): TicketDraft {

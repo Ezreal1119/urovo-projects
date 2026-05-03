@@ -1,4 +1,11 @@
-import { projectKeyFromSegments, readTickets, sortTickets, updateTicketPayload, writeTickets } from "@/lib/projects";
+import {
+  projectKeyFromSegments,
+  readRequirements,
+  readTickets,
+  sortTickets,
+  updateTicketPayload,
+  writeTickets,
+} from "@/lib/projects";
 import { TicketInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,6 +40,24 @@ export async function DELETE(_request: Request, context: Context) {
     const nextTickets = tickets.filter((ticket) => ticket.id !== ticketId);
     if (nextTickets.length === tickets.length) {
       return Response.json({ error: "Ticket not found." }, { status: 404 });
+    }
+
+    const linkedRequirements = (await readRequirements(key))
+      .filter((requirement) => requirement.related_tickets.includes(ticketId))
+      .map((requirement) => ({
+        id: requirement.id,
+        title: requirement.title,
+      }));
+
+    if (linkedRequirements.length > 0) {
+      return Response.json(
+        {
+          code: "TICKET_LINKED_TO_REQUIREMENTS",
+          error: "Ticket is linked to one or more requirements.",
+          requirements: linkedRequirements,
+        },
+        { status: 409 },
+      );
     }
 
     await writeTickets(key, nextTickets);
