@@ -30,8 +30,7 @@ const DEFAULT_PROJECT: ProjectInfo = {
   project_name: "",
   country: "",
   customer: "",
-  status: "active",
-  description: "",
+  sales: "Unknown",
   created_at: "",
 };
 
@@ -118,6 +117,7 @@ function sanitizeProject(key: string, project: Partial<ProjectInfo>): ProjectInf
     ...project,
     project_id: project.project_id || key,
     project_name: project.project_name || key,
+    sales: project.sales || "Unknown",
   };
 }
 
@@ -455,7 +455,7 @@ function normalizeOverviewRequirement(
   }
 
   return {
-    id: cleanText(requirement.id) || "OVR-001",
+    id: cleanText(requirement.id) || "DEM-001",
     product,
     simple_requirements: normalizeTextList(requirement.simple_requirements),
     linked_requirements: normalizeRequirementLinks(requirement.linked_requirements),
@@ -517,10 +517,10 @@ function nextRequirementId(existing: Requirement[]) {
 
 function nextOverviewRequirementId(existing: OverviewRequirement[]) {
   const highest = existing.reduce((max, requirement) => {
-    const match = requirement.id.match(/^OVR-(\d+)$/i);
+    const match = requirement.id.match(/^(?:DEM|OVR)-(\d+)$/i);
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
-  return `OVR-${String(highest + 1).padStart(3, "0")}`;
+  return `DEM-${String(highest + 1).padStart(3, "0")}`;
 }
 
 function overviewProducts(overview: Overview) {

@@ -1,5 +1,6 @@
 import {
   projectKeyFromSegments,
+  readOverview,
   readRequirements,
   sortRequirements,
   updateRequirementPayload,
@@ -39,6 +40,25 @@ export async function DELETE(_request: Request, context: Context) {
     const nextRequirements = requirements.filter((requirement) => requirement.id !== requirementId);
     if (nextRequirements.length === requirements.length) {
       return Response.json({ error: "Requirement not found." }, { status: 404 });
+    }
+
+    const linkedOverviewRequirements = (await readOverview(key)).requirements
+      .filter((requirement) => requirement.linked_requirements.includes(requirementId))
+      .map((requirement) => ({
+        id: requirement.id,
+        product: requirement.product,
+        remark: requirement.remark,
+      }));
+
+    if (linkedOverviewRequirements.length > 0) {
+      return Response.json(
+        {
+          code: "REQUIREMENT_LINKED_TO_OVERVIEW",
+          error: "Requirement is linked to one or more overview items.",
+          overviewRequirements: linkedOverviewRequirements,
+        },
+        { status: 409 },
+      );
     }
 
     await writeRequirements(key, nextRequirements);

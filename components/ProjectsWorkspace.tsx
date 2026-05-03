@@ -103,6 +103,16 @@ type TicketDeleteBlocker = {
   requirements: LinkedRequirementSummary[];
 };
 
+type LinkedOverviewRequirementSummary = Pick<
+  OverviewRequirement,
+  "id" | "product" | "remark"
+>;
+
+type RequirementDeleteBlocker = {
+  requirementId: string;
+  overviewRequirements: LinkedOverviewRequirementSummary[];
+};
+
 type RecentProject = {
   folder: string;
   projectName: string;
@@ -233,6 +243,8 @@ export default function ProjectsWorkspace() {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [ticketDeleteBlocker, setTicketDeleteBlocker] =
     useState<TicketDeleteBlocker | null>(null);
+  const [requirementDeleteBlocker, setRequirementDeleteBlocker] =
+    useState<RequirementDeleteBlocker | null>(null);
   const loadProjectRequestId = useRef(0);
 
   const selectedTicket =
@@ -990,6 +1002,21 @@ export default function ProjectsWorkspace() {
         current.filter((requirement) => requirement.id !== requirementId),
       );
       setSelectedRequirementId("");
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.data?.code === "REQUIREMENT_LINKED_TO_OVERVIEW"
+      ) {
+        setRequirementDeleteBlocker({
+          requirementId,
+          overviewRequirements: Array.isArray(error.data.overviewRequirements)
+            ? error.data.overviewRequirements
+            : [],
+        });
+        return;
+      }
+      setError((error as Error).message);
     } finally {
       setSaving(false);
     }
@@ -1098,6 +1125,29 @@ export default function ProjectsWorkspace() {
     setSelectedRequirementId(requirement.id);
   }
 
+  function openLinkedOverviewRequirement(requirementId: string) {
+    const requirement = overview.requirements.find(
+      (current) => current.id === requirementId,
+    );
+    if (!requirement) {
+      return;
+    }
+    if (
+      !canDiscardTicketChanges() ||
+      !canDiscardRequirementChanges() ||
+      !canDiscardOverviewRequirementChanges()
+    ) {
+      return;
+    }
+    setProjectMode("overview");
+    setSelectedTicketId("");
+    setSelectedTicketDirty(false);
+    setSelectedRequirementId("");
+    setSelectedRequirementDirty(false);
+    setSelectedOverviewRequirementId(requirement.id);
+    setSelectedOverviewRequirementDirty(false);
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
       <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
@@ -1126,7 +1176,7 @@ export default function ProjectsWorkspace() {
             {viewMode === "dashboard"
               ? "Search all tickets"
               : projectMode === "overview"
-                ? "Search overview"
+                ? "Search demand"
                 : projectMode === "requirements"
                 ? "Search requirements"
                 : "Search tickets"}
@@ -1139,7 +1189,7 @@ export default function ProjectsWorkspace() {
               viewMode === "dashboard"
                 ? "Search all tickets"
                 : projectMode === "overview"
-                  ? "Search overview"
+                  ? "Search demand"
                   : projectMode === "requirements"
                   ? "Search requirements"
                   : "Search tickets"
@@ -1158,7 +1208,7 @@ export default function ProjectsWorkspace() {
           className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {projectMode === "overview"
-            ? "New Overview Item"
+            ? "New Demand"
             : projectMode === "requirements"
               ? "New Requirement"
               : "New Ticket"}
@@ -1469,6 +1519,17 @@ export default function ProjectsWorkspace() {
         />
       ) : null}
 
+      {requirementDeleteBlocker ? (
+        <RequirementDeleteBlockedDialog
+          blocker={requirementDeleteBlocker}
+          onClose={() => setRequirementDeleteBlocker(null)}
+          onOpenOverviewRequirement={(requirementId) => {
+            setRequirementDeleteBlocker(null);
+            openLinkedOverviewRequirement(requirementId);
+          }}
+        />
+      ) : null}
+
       {toast ? <Toast message={toast} /> : null}
     </div>
   );
@@ -1532,6 +1593,70 @@ function TicketDeleteBlockedDialog({
   );
 }
 
+function RequirementDeleteBlockedDialog({
+  blocker,
+  onClose,
+  onOpenOverviewRequirement,
+}: {
+  blocker: RequirementDeleteBlocker;
+  onClose: () => void;
+  onOpenOverviewRequirement: (requirementId: string) => void;
+}) {
+  return (
+    <Overlay>
+      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">
+              Requirement cannot be deleted
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              [{blocker.requirementId}] is linked to the overview items below.
+              Remove the linked requirement from each overview item first.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {blocker.overviewRequirements.map((requirement) => (
+            <button
+              key={requirement.id}
+              type="button"
+              onClick={() => onOpenOverviewRequirement(requirement.id)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-300 hover:bg-white"
+            >
+              <div className="text-sm font-semibold text-slate-950">
+                [{requirement.id}]: {requirement.product || "Overview item"}
+              </div>
+              {requirement.remark ? (
+                <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                  {requirement.remark}
+                </div>
+              ) : (
+                <div className="mt-1 text-xs text-slate-500">
+                  Open overview item
+                </div>
+              )}
+            </button>
+          ))}
+          {blocker.overviewRequirements.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+              No overview item details were returned. Refresh and try again.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 function ProjectHeader({
   project,
   mode,
@@ -1549,13 +1674,10 @@ function ProjectHeader({
             <h1 className="text-2xl font-semibold tracking-tight">
               {project.project_name}
             </h1>
-            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-              {project.status || "active"}
+            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+              {project.sales || "Unknown"}
             </span>
           </div>
-          <p className="w-full text-sm leading-6 text-slate-600">
-            {project.description || "No description."}
-          </p>
           <div className="mt-3 text-xs text-slate-400">
             Created at {formatDate(project.created_at)}
           </div>
@@ -1615,7 +1737,7 @@ function OverviewWorkspace({
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900">
-            Overview Requirements
+            Product demands
           </h2>
           <span className="text-xs text-slate-500">
             {requirements.length} shown
@@ -1636,10 +1758,10 @@ function OverviewWorkspace({
         {requirements.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
             <div className="text-sm font-medium text-slate-900">
-              No overview items yet
+              No product demands yet
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Add models, services, description, or overview requirement rows.
+              Add models, services, description, or product demand rows.
             </p>
           </div>
         ) : null}
@@ -1661,52 +1783,35 @@ function OverviewSettingsPanel({
 }) {
   const initial = overviewToSettingsDraft(overview);
   const [draft, setDraft] = useState<OverviewSettingsDraft>(initial);
-  const [baseline, setBaseline] = useState<OverviewSettingsDraft>(initial);
 
-  function updateDraft(nextDraft: OverviewSettingsDraft) {
+  async function updateAndSave(nextDraft: OverviewSettingsDraft) {
     setDraft(nextDraft);
-    onDirtyChange(!overviewSettingsDraftsEqual(nextDraft, baseline));
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    await onSave(draft);
-    setBaseline(draft);
+    await onSave(nextDraft);
     onDirtyChange(false);
   }
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <form onSubmit={submit} className="space-y-5">
-        <div className="grid gap-4 xl:grid-cols-2">
-          <ProductListEditor
-            label="Models"
-            values={draft.models}
-            onChange={(models) => updateDraft({ ...draft, models })}
-          />
-          <ProductListEditor
-            label="Services"
-            values={draft.others}
-            onChange={(others) => updateDraft({ ...draft, others })}
-          />
-        </div>
-        <Field label="Description">
-          <textarea
-            value={draft.description}
-            onChange={(event) =>
-              updateDraft({ ...draft, description: event.target.value })
-            }
-            className="form-input min-h-28 resize-y"
-            placeholder="Project scope, market context, certification notes, or support coverage"
-          />
-        </Field>
-        <button
-          disabled={saving}
-          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-        >
-          {saving ? "Saving..." : "Save overview"}
-        </button>
-      </form>
+      <div className="space-y-4">
+        <ProductListEditor
+          label="Models"
+          values={draft.models}
+          saving={saving}
+          onChange={(models) => updateAndSave({ ...draft, models })}
+        />
+        <ProductListEditor
+          label="Services"
+          values={draft.others}
+          saving={saving}
+          onChange={(others) => updateAndSave({ ...draft, others })}
+        />
+        <DescriptionEditor
+          value={draft.description}
+          saving={saving}
+          onDirtyChange={onDirtyChange}
+          onSave={(description) => updateAndSave({ ...draft, description })}
+        />
+      </div>
     </section>
   );
 }
@@ -1714,75 +1819,196 @@ function OverviewSettingsPanel({
 function ProductListEditor({
   label,
   values,
+  saving,
   onChange,
 }: {
   label: string;
   values: string[];
-  onChange: (values: string[]) => void;
+  saving: boolean;
+  onChange: (values: string[]) => void | Promise<void>;
 }) {
+  const [adding, setAdding] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [value, setValue] = useState("");
 
-  function addValue() {
+  async function addValue() {
     const nextValue = value.trim();
     if (!nextValue || values.includes(nextValue)) {
       return;
     }
-    onChange([...values, nextValue]);
+    await onChange([...values, nextValue]);
     setValue("");
+    setAdding(false);
   }
 
   return (
-    <div>
-      <div className="mb-1 block text-xs font-medium text-slate-600">
-        {label}
-      </div>
-      <div className="flex gap-2">
-        <input
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              addValue();
-            }
-          }}
-          className="form-input"
-          placeholder={`Add ${label.toLowerCase()}`}
-        />
-        <button
-          type="button"
-          onClick={addValue}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
-        >
-          Add
-        </button>
-      </div>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+      <div className="mr-1 text-xs font-medium text-slate-600">{label}</div>
       {values.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-          {values.map((item) => (
-            <span
-              key={item}
-              className="relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 pr-5 text-xs font-medium text-slate-700"
-            >
-              {item}
+        values.map((item) => (
+          <span
+            key={item}
+            className={`relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 ${
+              deleting ? "pr-5" : ""
+            }`}
+          >
+            {item}
+            {deleting ? (
               <button
                 type="button"
                 onClick={() =>
-                  onChange(values.filter((current) => current !== item))
+                  void onChange(values.filter((current) => current !== item))
                 }
-                className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                disabled={saving}
+                className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700 disabled:opacity-60"
                 aria-label={`Remove ${item}`}
               >
                 x
               </button>
-            </span>
-          ))}
-        </div>
+            ) : null}
+          </span>
+        ))
       ) : (
-        <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+        <span className="text-sm text-slate-500">
           No {label.toLowerCase()} listed.
-        </div>
+        </span>
       )}
+      <button
+        type="button"
+        onClick={() => setAdding(true)}
+        disabled={saving}
+        className="ml-auto rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:opacity-60"
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        onClick={() => setDeleting((current) => !current)}
+        disabled={saving || values.length === 0}
+        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:opacity-60"
+      >
+        {deleting ? "Cancel" : "Delete"}
+      </button>
+      {adding ? (
+        <Overlay>
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Add {label}</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdding(false);
+                  setValue("");
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+              >
+                Close
+              </button>
+            </div>
+            <input
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void addValue();
+                }
+              }}
+              className="form-input"
+              placeholder={`Add ${label.toLowerCase()}`}
+              autoFocus
+            />
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void addValue()}
+                disabled={saving || !value.trim()}
+                className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Add"}
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      ) : null}
+    </div>
+  );
+}
+
+function DescriptionEditor({
+  value,
+  saving,
+  onDirtyChange,
+  onSave,
+}: {
+  value: string;
+  saving: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+  onSave: (value: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  async function saveDescription() {
+    const nextValue = draft.trim();
+    setEditing(false);
+    if (nextValue === value) {
+      onDirtyChange(false);
+      return;
+    }
+    await onSave(nextValue);
+    onDirtyChange(false);
+  }
+
+  if (editing) {
+    return (
+      <Field label="Description">
+        <textarea
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            onDirtyChange(event.target.value.trim() !== value);
+          }}
+          onBlur={() => void saveDescription()}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+            if (event.key === "Escape") {
+              setDraft(value);
+              setEditing(false);
+              onDirtyChange(false);
+            }
+          }}
+          className="form-input min-h-28 resize-y"
+          placeholder="Project scope, market context, certification notes, or support coverage"
+          autoFocus
+        />
+      </Field>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium text-slate-600">
+        Description
+      </div>
+      <div
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}
+        className="min-h-24 cursor-pointer rounded-lg bg-slate-50 p-3 text-sm leading-6 text-slate-700 hover:bg-slate-100"
+      >
+        {saving ? (
+          <span className="text-slate-500">Saving...</span>
+        ) : value ? (
+          <p className="whitespace-pre-wrap">{value}</p>
+        ) : (
+          <p className="text-slate-500">No description.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -2650,7 +2876,7 @@ function OverviewRequirementModal({
     <Overlay>
       <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">New Overview Item</h2>
+          <h2 className="text-lg font-semibold">New Demand</h2>
           <button
             onClick={closeModal}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
@@ -2666,7 +2892,7 @@ function OverviewRequirementModal({
           products={products}
           requirements={requirements}
           saving={saving}
-          submitLabel="Create overview item"
+          submitLabel="Create demand"
           onDirtyChange={setDirty}
           onSubmit={onCreate}
         />
@@ -3158,6 +3384,7 @@ function OverviewRequirementForm({
   const [draft, setDraft] = useState<OverviewRequirementDraft>(initial);
   const [baseline, setBaseline] = useState<OverviewRequirementDraft>(initial);
   const [requirementPickerOpen, setRequirementPickerOpen] = useState(false);
+  const [requirementDeleteMode, setRequirementDeleteMode] = useState(false);
   const [requirementQuery, setRequirementQuery] = useState("");
 
   const selectableRequirements = requirements.filter((requirement) => {
@@ -3246,30 +3473,44 @@ function OverviewRequirementForm({
           <span className="block text-xs font-medium text-slate-600">
             Linked requirements
           </span>
-          <button
-            type="button"
-            onClick={() => setRequirementPickerOpen(true)}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Add requirement
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRequirementPickerOpen(true)}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setRequirementDeleteMode((current) => !current)}
+              disabled={draft.linked_requirements.length === 0}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {requirementDeleteMode ? "Cancel" : "Delete"}
+            </button>
+          </div>
         </div>
         {draft.linked_requirements.length > 0 ? (
           <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
             {draft.linked_requirements.map((requirementId) => (
               <span
                 key={requirementId}
-                className="relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 pr-5 text-xs font-medium text-slate-700"
+                className={`relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 ${
+                  requirementDeleteMode ? "pr-5" : ""
+                }`}
               >
-                {requirementId}
-                <button
-                  type="button"
-                  onClick={() => removeLinkedRequirement(requirementId)}
-                  className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
-                  aria-label={`Remove ${requirementId}`}
-                >
-                  x
-                </button>
+                {formatRequirementLabel(requirementId, requirements)}
+                {requirementDeleteMode ? (
+                  <button
+                    type="button"
+                    onClick={() => removeLinkedRequirement(requirementId)}
+                    className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                    aria-label={`Remove ${requirementId}`}
+                  >
+                    x
+                  </button>
+                ) : null}
               </span>
             ))}
           </div>
@@ -3463,6 +3704,7 @@ function RequirementForm({
   const [draft, setDraft] = useState<RequirementDraft>(initial);
   const [baseline, setBaseline] = useState<RequirementDraft>(initial);
   const [ticketPickerOpen, setTicketPickerOpen] = useState(false);
+  const [ticketDeleteMode, setTicketDeleteMode] = useState(false);
   const [ticketQuery, setTicketQuery] = useState("");
 
   const selectableTickets = tickets.filter((ticket) => {
@@ -3559,32 +3801,49 @@ function RequirementForm({
           <span className="block text-xs font-medium text-slate-600">
             Related tickets
           </span>
-          <button
-            type="button"
-            onClick={() => setTicketPickerOpen(true)}
-            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Add ticket
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTicketPickerOpen(true)}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setTicketDeleteMode((current) => !current)}
+              disabled={draft.related_tickets.length === 0}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {ticketDeleteMode ? "Cancel" : "Delete"}
+            </button>
+          </div>
         </div>
         {draft.related_tickets.length > 0 ? (
           <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-            {draft.related_tickets.map((ticketId) => (
-              <span
-                key={ticketId}
-                className="relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 pr-5 text-xs font-medium text-slate-700"
-              >
-                {ticketId}
-                <button
-                  type="button"
-                  onClick={() => removeRelatedTicket(ticketId)}
-                  className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
-                  aria-label={`Remove ${ticketId}`}
+            {draft.related_tickets.map((ticketId) => {
+              const ticket = tickets.find((current) => current.id === ticketId);
+              return (
+                <span
+                  key={ticketId}
+                  className={`relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 ${
+                    ticketDeleteMode ? "pr-5" : ""
+                  }`}
                 >
-                  x
-                </button>
-              </span>
-            ))}
+                  [{ticketId}]: {ticket?.title ?? "Ticket not found"}
+                  {ticketDeleteMode ? (
+                    <button
+                      type="button"
+                      onClick={() => removeRelatedTicket(ticketId)}
+                      className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                      aria-label={`Remove ${ticketId}`}
+                    >
+                      x
+                    </button>
+                  ) : null}
+                </span>
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
@@ -4019,12 +4278,20 @@ function LinkedRequirementChips({
             className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
             title={requirement.title}
           >
-            {requirementId}
+            {formatRequirementLabel(requirementId, requirements)}
           </button>
         );
       })}
     </div>
   );
+}
+
+function formatRequirementLabel(
+  requirementId: string,
+  requirements: Requirement[],
+) {
+  const requirement = requirements.find((current) => current.id === requirementId);
+  return requirement ? `[${requirementId}]: ${requirement.title}` : requirementId;
 }
 
 function relatedTicketRowStyle(ticket: Ticket | undefined) {
@@ -4231,17 +4498,6 @@ function overviewSettingsKey(overview: Overview) {
     others: overview.others,
     description: overview.description,
   });
-}
-
-function overviewSettingsDraftsEqual(
-  left: OverviewSettingsDraft,
-  right: OverviewSettingsDraft,
-) {
-  return (
-    left.models.join("\n") === right.models.join("\n") &&
-    left.others.join("\n") === right.others.join("\n") &&
-    left.description === right.description
-  );
 }
 
 function overviewRequirementToDraft(

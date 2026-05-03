@@ -21,8 +21,7 @@ export type ProjectInfo = {
   project_name: string;
   country: string;
   customer: string;
-  status: string;
-  description: string;
+  sales: string;
   created_at: string;
 };
 
