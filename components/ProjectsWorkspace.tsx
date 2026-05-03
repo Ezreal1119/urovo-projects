@@ -7,6 +7,8 @@ import {
   DashboardData,
   EVENT_ROLES,
   EventRole,
+  Overview,
+  OverviewRequirement,
   PRIORITIES,
   ProjectInfo,
   ProjectListItem,
@@ -47,13 +49,26 @@ type RequirementTimelineDraft = {
   remark: string;
 };
 
+type OverviewSettingsDraft = {
+  models: string[];
+  others: string[];
+  description: string;
+};
+
+type OverviewRequirementDraft = {
+  product: string;
+  simple_requirements: string[];
+  linked_requirements: string[];
+  remark: string;
+};
+
 type ProjectGroup = {
   country: string;
   projects: ProjectListItem[];
 };
 
 type ViewMode = "dashboard" | "project";
-type ProjectMode = "tickets" | "requirements";
+type ProjectMode = "overview" | "tickets" | "requirements";
 
 type TicketFilter = "all" | "active" | "pending_internal" | "urgent";
 
@@ -109,6 +124,20 @@ const emptyRequirementTimelineDraft: RequirementTimelineDraft = {
   remark: "",
 };
 
+const emptyOverview: Overview = {
+  models: [],
+  others: [],
+  description: "",
+  requirements: [],
+};
+
+const emptyOverviewRequirementDraft: OverviewRequirementDraft = {
+  product: "",
+  simple_requirements: [],
+  linked_requirements: [],
+  remark: "",
+};
+
 const statusLabels: Record<TicketStatus, string> = {
   pending_internal: "[Pending]: Internal",
   pending_customer: "[Pending]: Customer",
@@ -156,10 +185,13 @@ export default function ProjectsWorkspace() {
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(
     null,
   );
+  const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState("");
   const [selectedRequirementId, setSelectedRequirementId] = useState("");
+  const [selectedOverviewRequirementId, setSelectedOverviewRequirementId] =
+    useState("");
   const [projectQuery, setProjectQuery] = useState("");
   const [globalQuery, setGlobalQuery] = useState("");
   const [ticketFilter, setTicketFilter] = useState<TicketFilter>("all");
@@ -174,10 +206,15 @@ export default function ProjectsWorkspace() {
   const [toast, setToast] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [showNewRequirement, setShowNewRequirement] = useState(false);
+  const [showNewOverviewRequirement, setShowNewOverviewRequirement] =
+    useState(false);
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
   const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
   const [selectedRequirementDirty, setSelectedRequirementDirty] =
+    useState(false);
+  const [overviewDirty, setOverviewDirty] = useState(false);
+  const [selectedOverviewRequirementDirty, setSelectedOverviewRequirementDirty] =
     useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
@@ -186,6 +223,10 @@ export default function ProjectsWorkspace() {
   const selectedRequirement =
     requirements.find(
       (requirement) => requirement.id === selectedRequirementId,
+    ) ?? null;
+  const selectedOverviewRequirement =
+    overview.requirements.find(
+      (requirement) => requirement.id === selectedOverviewRequirementId,
     ) ?? null;
 
   const filteredProjects = useMemo(() => {
@@ -273,6 +314,28 @@ export default function ProjectsWorkspace() {
     );
   }, [requirements, globalQuery]);
 
+  const filteredOverviewRequirements = useMemo(() => {
+    const query = globalQuery.trim().toLowerCase();
+    if (!query) {
+      return overview.requirements;
+    }
+    return overview.requirements.filter((requirement) =>
+      [
+        overview.description,
+        ...overview.models,
+        ...overview.others,
+        requirement.id,
+        requirement.product,
+        ...requirement.simple_requirements,
+        ...requirement.linked_requirements,
+        requirement.remark,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [overview, globalQuery]);
+
   const metrics = useMemo(() => {
     return {
       total: tickets.length,
@@ -328,42 +391,19 @@ export default function ProjectsWorkspace() {
     visibleDashboardTicketPage * TICKETS_PER_PAGE,
   );
 
-  useEffect(() => {
-    setTicketPage(1);
-  }, [selectedFolder, globalQuery, ticketFilter]);
-
-  useEffect(() => {
-    setRequirementPage(1);
-  }, [selectedFolder, requirements.length, globalQuery]);
-
-  useEffect(() => {
-    setDashboardTicketPage(1);
-  }, [dashboardFilter, globalQuery]);
-
-  useEffect(() => {
-    if (ticketPage > totalTicketPages) {
-      setTicketPage(totalTicketPages);
-    }
-  }, [ticketPage, totalTicketPages]);
-
-  useEffect(() => {
-    if (requirementPage > totalRequirementPages) {
-      setRequirementPage(totalRequirementPages);
-    }
-  }, [requirementPage, totalRequirementPages]);
-
-  useEffect(() => {
-    if (dashboardTicketPage > totalDashboardTicketPages) {
-      setDashboardTicketPage(totalDashboardTicketPages);
-    }
-  }, [dashboardTicketPage, totalDashboardTicketPages]);
-
   function applyTicketFilter(filter: TicketFilter) {
     setTicketFilter(filter);
     setTicketPage(1);
     if (filter === "all") {
       setGlobalQuery("");
     }
+  }
+
+  function updateGlobalQuery(value: string) {
+    setGlobalQuery(value);
+    setTicketPage(1);
+    setRequirementPage(1);
+    setDashboardTicketPage(1);
   }
 
   function canDiscardTicketChanges() {
@@ -377,8 +417,24 @@ export default function ProjectsWorkspace() {
     );
   }
 
+  function canDiscardOverviewChanges() {
+    return !overviewDirty || confirm("Discard unsaved overview changes?");
+  }
+
+  function canDiscardOverviewRequirementChanges() {
+    return (
+      !selectedOverviewRequirementDirty ||
+      confirm("Discard unsaved overview item changes?")
+    );
+  }
+
   function canLeaveProjectWork() {
-    return canDiscardTicketChanges() && canDiscardRequirementChanges();
+    return (
+      canDiscardTicketChanges() &&
+      canDiscardRequirementChanges() &&
+      canDiscardOverviewChanges() &&
+      canDiscardOverviewRequirementChanges()
+    );
   }
 
   function closeSelectedTicket() {
@@ -406,6 +462,9 @@ export default function ProjectsWorkspace() {
     setSelectedTicketDirty(false);
     setSelectedRequirementId("");
     setSelectedRequirementDirty(false);
+    setSelectedOverviewRequirementId("");
+    setOverviewDirty(false);
+    setSelectedOverviewRequirementDirty(false);
   }
 
   function selectTicket(ticketId: string) {
@@ -430,6 +489,17 @@ export default function ProjectsWorkspace() {
     setSelectedRequirementDirty(false);
   }
 
+  function selectOverviewRequirement(requirementId: string) {
+    if (requirementId === selectedOverviewRequirementId) {
+      return;
+    }
+    if (!canDiscardOverviewRequirementChanges()) {
+      return;
+    }
+    setSelectedOverviewRequirementId(requirementId);
+    setSelectedOverviewRequirementDirty(false);
+  }
+
   async function loadProject(
     folder: string,
     options: { ticketId?: string } = {},
@@ -440,9 +510,14 @@ export default function ProjectsWorkspace() {
     setSelectedFolder(folder);
     setSelectedTicketId("");
     setSelectedRequirementId("");
+    setSelectedOverviewRequirementId("");
     setSelectedTicketDirty(false);
     setSelectedRequirementDirty(false);
-    setProjectMode("tickets");
+    setOverviewDirty(false);
+    setSelectedOverviewRequirementDirty(false);
+    setProjectMode("overview");
+    setTicketPage(1);
+    setRequirementPage(1);
     setViewMode("project");
     setError("");
     try {
@@ -451,15 +526,21 @@ export default function ProjectsWorkspace() {
       );
       setSelectedProject(data.project);
       setTickets(data.tickets);
+      const overviewData = await api<{ overview: Overview }>(
+        `${projectApiPath(folder)}/overview`,
+      );
+      setOverview(overviewData.overview);
       const requirementsData = await api<{ requirements: Requirement[] }>(
         `${projectApiPath(folder)}/requirements`,
       );
       setRequirements(requirementsData.requirements);
+      setProjectMode(options.ticketId ? "tickets" : "overview");
       setSelectedTicketId(options.ticketId ?? "");
       rememberRecentProject(folder, data.project.project_name);
     } catch (requestError) {
       setError((requestError as Error).message);
       setSelectedProject(null);
+      setOverview(emptyOverview);
       setTickets([]);
       setRequirements([]);
     }
@@ -475,8 +556,11 @@ export default function ProjectsWorkspace() {
     setProjectMode(mode);
     setSelectedTicketId("");
     setSelectedRequirementId("");
+    setSelectedOverviewRequirementId("");
     setSelectedTicketDirty(false);
     setSelectedRequirementDirty(false);
+    setOverviewDirty(false);
+    setSelectedOverviewRequirementDirty(false);
   }
 
   async function refreshDashboard() {
@@ -723,6 +807,98 @@ export default function ProjectsWorkspace() {
     }
   }
 
+  async function updateOverviewSettings(draft: OverviewSettingsDraft) {
+    if (!selectedFolder) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await api<{ overview: Overview }>(
+        `${projectApiPath(selectedFolder)}/overview`,
+        {
+          method: "PUT",
+          body: JSON.stringify(draft),
+        },
+      );
+      setOverview(data.overview);
+      setOverviewDirty(false);
+      showToast("Overview changes saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function createOverviewRequirement(draft: OverviewRequirementDraft) {
+    if (!selectedFolder) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: OverviewRequirement }>(
+        `${projectApiPath(selectedFolder)}/overview/requirements`,
+        {
+          method: "POST",
+          body: JSON.stringify(overviewRequirementDraftForApi(draft)),
+        },
+      );
+      setOverview((current) => ({
+        ...current,
+        requirements: [data.requirement, ...current.requirements],
+      }));
+      setSelectedOverviewRequirementId(data.requirement.id);
+      setShowNewOverviewRequirement(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateOverviewRequirement(
+    requirementId: string,
+    draft: OverviewRequirementDraft,
+  ) {
+    setSaving(true);
+    try {
+      const data = await api<{ requirement: OverviewRequirement }>(
+        `${projectApiPath(selectedFolder)}/overview/requirements/${requirementId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(overviewRequirementDraftForApi(draft)),
+        },
+      );
+      setOverview((current) => ({
+        ...current,
+        requirements: current.requirements.map((requirement) =>
+          requirement.id === requirementId ? data.requirement : requirement,
+        ),
+      }));
+      showToast("Overview item changes saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteOverviewRequirement(requirementId: string) {
+    if (!confirm("Delete this overview item? This writes directly to overview.json.")) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await api(
+        `${projectApiPath(selectedFolder)}/overview/requirements/${requirementId}`,
+        { method: "DELETE" },
+      );
+      setOverview((current) => ({
+        ...current,
+        requirements: current.requirements.filter(
+          (requirement) => requirement.id !== requirementId,
+        ),
+      }));
+      setSelectedOverviewRequirementId("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function updateRequirement(
     requirementId: string,
     draft: RequirementDraft,
@@ -851,6 +1027,21 @@ export default function ProjectsWorkspace() {
     setSelectedTicketId(ticket.id);
   }
 
+  function openLinkedRequirement(requirementId: string) {
+    const requirement = requirements.find((current) => current.id === requirementId);
+    if (!requirement) {
+      return;
+    }
+    if (!canDiscardOverviewChanges() || !canDiscardOverviewRequirementChanges()) {
+      return;
+    }
+    setProjectMode("requirements");
+    setSelectedOverviewRequirementId("");
+    setOverviewDirty(false);
+    setSelectedOverviewRequirementDirty(false);
+    setSelectedRequirementId(requirement.id);
+  }
+
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
       <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
@@ -878,18 +1069,22 @@ export default function ProjectsWorkspace() {
           <span className="sr-only">
             {viewMode === "dashboard"
               ? "Search all tickets"
-              : projectMode === "requirements"
+              : projectMode === "overview"
+                ? "Search overview"
+                : projectMode === "requirements"
                 ? "Search requirements"
                 : "Search tickets"}
           </span>
           <input
             value={globalQuery}
-            onChange={(event) => setGlobalQuery(event.target.value)}
+            onChange={(event) => updateGlobalQuery(event.target.value)}
             className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
             placeholder={
               viewMode === "dashboard"
                 ? "Search all tickets"
-                : projectMode === "requirements"
+                : projectMode === "overview"
+                  ? "Search overview"
+                  : projectMode === "requirements"
                   ? "Search requirements"
                   : "Search tickets"
             }
@@ -897,14 +1092,20 @@ export default function ProjectsWorkspace() {
         </label>
         <button
           onClick={() =>
-            projectMode === "requirements"
+            projectMode === "overview"
+              ? setShowNewOverviewRequirement(true)
+              : projectMode === "requirements"
               ? setShowNewRequirement(true)
               : setShowNewTicket(true)
           }
           disabled={viewMode !== "project" || !selectedFolder}
           className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {projectMode === "requirements" ? "New Requirement" : "New Ticket"}
+          {projectMode === "overview"
+            ? "New Overview Item"
+            : projectMode === "requirements"
+              ? "New Requirement"
+              : "New Ticket"}
         </button>
       </header>
 
@@ -957,7 +1158,10 @@ export default function ProjectsWorkspace() {
               totalPages={totalDashboardTicketPages}
               allTickets={dashboardTickets}
               activeFilter={dashboardFilter}
-              onFilterChange={setDashboardFilter}
+              onFilterChange={(filter) => {
+                setDashboardFilter(filter);
+                setDashboardTicketPage(1);
+              }}
               onPreviousPage={() =>
                 setDashboardTicketPage((current) => Math.max(1, current - 1))
               }
@@ -976,7 +1180,20 @@ export default function ProjectsWorkspace() {
                 mode={projectMode}
                 onModeChange={switchProjectMode}
               />
-              {projectMode === "tickets" ? (
+              {projectMode === "overview" ? (
+                <OverviewWorkspace
+                  key={selectedFolder}
+                  overview={overview}
+                  requirements={filteredOverviewRequirements}
+                  allRequirements={requirements}
+                  selectedRequirementId={selectedOverviewRequirementId}
+                  saving={saving}
+                  onSettingsDirtyChange={setOverviewDirty}
+                  onSaveSettings={updateOverviewSettings}
+                  onSelect={selectOverviewRequirement}
+                  onOpenRequirement={openLinkedRequirement}
+                />
+              ) : projectMode === "tickets" ? (
                 <>
                   <section className="mt-5 grid gap-3 md:grid-cols-4">
                     <Metric
@@ -1071,9 +1288,7 @@ export default function ProjectsWorkspace() {
                   page={visibleRequirementPage}
                   totalPages={totalRequirementPages}
                   selectedRequirementId={selectedRequirementId}
-                  tickets={tickets}
                   onSelect={selectRequirement}
-                  onOpenTicket={openRelatedTicket}
                   onPreviousPage={() =>
                     setRequirementPage((current) => Math.max(1, current - 1))
                   }
@@ -1137,6 +1352,30 @@ export default function ProjectsWorkspace() {
         />
       ) : null}
 
+      {selectedOverviewRequirement ? (
+        <OverviewRequirementDrawer
+          requirement={selectedOverviewRequirement}
+          products={[...overview.models, ...overview.others]}
+          requirements={requirements}
+          saving={saving}
+          onClose={() => {
+            if (!canDiscardOverviewRequirementChanges()) {
+              return;
+            }
+            setSelectedOverviewRequirementId("");
+            setSelectedOverviewRequirementDirty(false);
+          }}
+          onDirtyChange={setSelectedOverviewRequirementDirty}
+          onSave={(draft) =>
+            updateOverviewRequirement(selectedOverviewRequirement.id, draft)
+          }
+          onDelete={() =>
+            void deleteOverviewRequirement(selectedOverviewRequirement.id)
+          }
+          onOpenRequirement={openLinkedRequirement}
+        />
+      ) : null}
+
       {showNewTicket ? (
         <TicketModal
           saving={saving}
@@ -1150,6 +1389,16 @@ export default function ProjectsWorkspace() {
           saving={saving}
           onClose={() => setShowNewRequirement(false)}
           onCreate={createRequirement}
+        />
+      ) : null}
+
+      {showNewOverviewRequirement ? (
+        <OverviewRequirementModal
+          products={[...overview.models, ...overview.others]}
+          requirements={requirements}
+          saving={saving}
+          onClose={() => setShowNewOverviewRequirement(false)}
+          onCreate={createOverviewRequirement}
         />
       ) : null}
 
@@ -1187,7 +1436,7 @@ function ProjectHeader({
           </div>
         </div>
         <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-          {(["tickets", "requirements"] as const).map((item) => (
+          {(["overview", "tickets", "requirements"] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -1198,12 +1447,275 @@ function ProjectHeader({
                   : "text-slate-500 hover:text-slate-950"
               }`}
             >
-              {item === "tickets" ? "Tickets" : "Requirements"}
+              {projectModeLabel(item)}
             </button>
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function OverviewWorkspace({
+  overview,
+  requirements,
+  allRequirements,
+  selectedRequirementId,
+  saving,
+  onSettingsDirtyChange,
+  onSaveSettings,
+  onSelect,
+  onOpenRequirement,
+}: {
+  overview: Overview;
+  requirements: OverviewRequirement[];
+  allRequirements: Requirement[];
+  selectedRequirementId: string;
+  saving: boolean;
+  onSettingsDirtyChange: (dirty: boolean) => void;
+  onSaveSettings: (draft: OverviewSettingsDraft) => void | Promise<void>;
+  onSelect: (requirementId: string) => void;
+  onOpenRequirement: (requirementId: string) => void;
+}) {
+  return (
+    <div className="mt-6 space-y-5">
+      <OverviewSettingsPanel
+        overview={overview}
+        saving={saving}
+        onDirtyChange={onSettingsDirtyChange}
+        onSave={onSaveSettings}
+      />
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-900">
+            Overview Requirements
+          </h2>
+          <span className="text-xs text-slate-500">
+            {requirements.length} shown
+          </span>
+        </div>
+        <div className="space-y-3">
+          {requirements.map((requirement) => (
+            <OverviewRequirementCard
+              key={requirement.id}
+              requirement={requirement}
+              active={requirement.id === selectedRequirementId}
+              requirements={allRequirements}
+              onClick={() => onSelect(requirement.id)}
+              onOpenRequirement={onOpenRequirement}
+            />
+          ))}
+        </div>
+        {requirements.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">
+            <div className="text-sm font-medium text-slate-900">
+              No overview items yet
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              Add models, services, description, or overview requirement rows.
+            </p>
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function OverviewSettingsPanel({
+  overview,
+  saving,
+  onDirtyChange,
+  onSave,
+}: {
+  overview: Overview;
+  saving: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+  onSave: (draft: OverviewSettingsDraft) => void | Promise<void>;
+}) {
+  const initial = overviewToSettingsDraft(overview);
+  const [draft, setDraft] = useState<OverviewSettingsDraft>(initial);
+  const [baseline, setBaseline] = useState<OverviewSettingsDraft>(initial);
+
+  function updateDraft(nextDraft: OverviewSettingsDraft) {
+    setDraft(nextDraft);
+    onDirtyChange(!overviewSettingsDraftsEqual(nextDraft, baseline));
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSave(draft);
+    setBaseline(draft);
+    onDirtyChange(false);
+  }
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <form onSubmit={submit} className="space-y-5">
+        <div className="grid gap-4 xl:grid-cols-2">
+          <ProductListEditor
+            label="Models"
+            values={draft.models}
+            onChange={(models) => updateDraft({ ...draft, models })}
+          />
+          <ProductListEditor
+            label="Services"
+            values={draft.others}
+            onChange={(others) => updateDraft({ ...draft, others })}
+          />
+        </div>
+        <Field label="Description">
+          <textarea
+            value={draft.description}
+            onChange={(event) =>
+              updateDraft({ ...draft, description: event.target.value })
+            }
+            className="form-input min-h-28 resize-y"
+            placeholder="Project scope, market context, certification notes, or support coverage"
+          />
+        </Field>
+        <button
+          disabled={saving}
+          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Saving..." : "Save overview"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function ProductListEditor({
+  label,
+  values,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [value, setValue] = useState("");
+
+  function addValue() {
+    const nextValue = value.trim();
+    if (!nextValue || values.includes(nextValue)) {
+      return;
+    }
+    onChange([...values, nextValue]);
+    setValue("");
+  }
+
+  return (
+    <div>
+      <div className="mb-1 block text-xs font-medium text-slate-600">
+        {label}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addValue();
+            }
+          }}
+          className="form-input"
+          placeholder={`Add ${label.toLowerCase()}`}
+        />
+        <button
+          type="button"
+          onClick={addValue}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+        >
+          Add
+        </button>
+      </div>
+      {values.length > 0 ? (
+        <div className="mt-2 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          {values.map((item) => (
+            <span
+              key={item}
+              className="relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 pr-5 text-xs font-medium text-slate-700"
+            >
+              {item}
+              <button
+                type="button"
+                onClick={() =>
+                  onChange(values.filter((current) => current !== item))
+                }
+                className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                aria-label={`Remove ${item}`}
+              >
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+          No {label.toLowerCase()} listed.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OverviewRequirementCard({
+  requirement,
+  active,
+  requirements,
+  onClick,
+  onOpenRequirement,
+}: {
+  requirement: OverviewRequirement;
+  active: boolean;
+  requirements: Requirement[];
+  onClick: () => void;
+  onOpenRequirement: (requirementId: string) => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`w-full cursor-pointer rounded-lg border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+        active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"
+      }`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="line-clamp-2 text-base font-semibold leading-6 text-slate-950">
+            <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
+              {requirement.id}
+            </span>
+            <span>{requirement.product || "No product selected"}</span>
+          </h3>
+        </div>
+        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+          {formatDateTimeFull(requirement.created_at)}
+        </span>
+      </div>
+      {requirement.simple_requirements.length > 0 ? (
+        <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-600">
+          {requirement.simple_requirements.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">No simple requirements.</p>
+      )}
+      {requirement.remark ? (
+        <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+          {requirement.remark}
+        </p>
+      ) : null}
+      <div className="mt-3">
+        <LinkedRequirementChips
+          requirementIds={requirement.linked_requirements}
+          requirements={requirements}
+          onOpenRequirement={onOpenRequirement}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -1213,9 +1725,7 @@ function RequirementsWorkspace({
   page,
   totalPages,
   selectedRequirementId,
-  tickets,
   onSelect,
-  onOpenTicket,
   onPreviousPage,
   onNextPage,
 }: {
@@ -1224,9 +1734,7 @@ function RequirementsWorkspace({
   page: number;
   totalPages: number;
   selectedRequirementId: string;
-  tickets: Ticket[];
   onSelect: (requirementId: string) => void;
-  onOpenTicket: (ticketId: string) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
 }) {
@@ -1249,9 +1757,7 @@ function RequirementsWorkspace({
             key={requirement.id}
             requirement={requirement}
             active={requirement.id === selectedRequirementId}
-            tickets={tickets}
             onClick={() => onSelect(requirement.id)}
-            onOpenTicket={onOpenTicket}
           />
         ))}
       </div>
@@ -1280,15 +1786,11 @@ function RequirementsWorkspace({
 function RequirementCard({
   requirement,
   active,
-  tickets,
   onClick,
-  onOpenTicket,
 }: {
   requirement: Requirement;
   active: boolean;
-  tickets: Ticket[];
   onClick: () => void;
-  onOpenTicket: (ticketId: string) => void;
 }) {
   return (
     <div
@@ -1575,7 +2077,14 @@ function PieChart({
   const total = items.reduce((sum, item) => sum + item.value, 0);
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
-  let offset = 0;
+  const segments = items.reduce<
+    Array<(typeof items)[number] & { length: number; offset: number }>
+  >((current, item) => {
+    const previous = current.at(-1);
+    const offset = previous ? previous.offset + previous.length : 0;
+    const length = total > 0 ? (item.value / total) * circumference : 0;
+    return [...current, { ...item, length, offset }];
+  }, []);
 
   return (
     <div className="grid gap-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
@@ -1589,10 +2098,8 @@ function PieChart({
             stroke="#e2e8f0"
             strokeWidth="18"
           />
-          {items.map((item) => {
-            const length = total > 0 ? (item.value / total) * circumference : 0;
-            const strokeDashoffset = -offset;
-            offset += length;
+          {segments.map((item) => {
+            const strokeDashoffset = -item.offset;
             return (
               <circle
                 key={item.label}
@@ -1602,7 +2109,7 @@ function PieChart({
                 fill="none"
                 stroke={item.color}
                 strokeWidth={item.active ? 22 : 18}
-                strokeDasharray={`${length} ${circumference - length}`}
+                strokeDasharray={`${item.length} ${circumference - item.length}`}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="butt"
                 className="cursor-pointer transition-all hover:opacity-80"
@@ -1991,6 +2498,57 @@ function RequirementModal({
   );
 }
 
+function OverviewRequirementModal({
+  products,
+  requirements,
+  saving,
+  onClose,
+  onCreate,
+}: {
+  products: string[];
+  requirements: Requirement[];
+  saving: boolean;
+  onClose: () => void;
+  onCreate: (draft: OverviewRequirementDraft) => void | Promise<void>;
+}) {
+  const [dirty, setDirty] = useState(false);
+
+  function closeModal() {
+    if (dirty && !confirm("Discard this new overview item draft?")) {
+      return;
+    }
+    onClose();
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">New Overview Item</h2>
+          <button
+            onClick={closeModal}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+        <OverviewRequirementForm
+          initial={{
+            ...emptyOverviewRequirementDraft,
+            product: products[0] ?? "",
+          }}
+          products={products}
+          requirements={requirements}
+          saving={saving}
+          submitLabel="Create overview item"
+          onDirtyChange={setDirty}
+          onSubmit={onCreate}
+        />
+      </div>
+    </Overlay>
+  );
+}
+
 function TicketDrawer({
   ticket,
   saving,
@@ -2235,6 +2793,96 @@ function RequirementDrawer({
   );
 }
 
+function OverviewRequirementDrawer({
+  requirement,
+  products,
+  requirements,
+  saving,
+  onClose,
+  onDirtyChange,
+  onSave,
+  onDelete,
+  onOpenRequirement,
+}: {
+  requirement: OverviewRequirement;
+  products: string[];
+  requirements: Requirement[];
+  saving: boolean;
+  onClose: () => void;
+  onDirtyChange: (dirty: boolean) => void;
+  onSave: (draft: OverviewRequirementDraft) => Promise<void>;
+  onDelete: () => void;
+  onOpenRequirement: (requirementId: string) => void;
+}) {
+  useEffect(() => {
+    onDirtyChange(false);
+  }, [onDirtyChange, requirement.id]);
+
+  async function saveRequirement(draft: OverviewRequirementDraft) {
+    await onSave(draft);
+    onDirtyChange(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 flex justify-end bg-slate-950/20">
+      <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white p-5">
+          <div>
+            <div className="text-xs font-medium text-slate-500">
+              {requirement.id}
+            </div>
+            <h2 className="mt-1 text-xl font-semibold">
+              {requirement.product || "Overview item"}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="space-y-6 p-5">
+          <OverviewRequirementForm
+            key={requirement.id}
+            initial={overviewRequirementToDraft(requirement)}
+            products={products}
+            requirements={requirements}
+            saving={saving}
+            submitLabel="Save changes"
+            onDirtyChange={onDirtyChange}
+            onSubmit={saveRequirement}
+          />
+
+          {requirement.linked_requirements.length > 0 ? (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold">
+                Linked requirements
+              </h3>
+              <LinkedRequirementChips
+                requirementIds={requirement.linked_requirements}
+                requirements={requirements}
+                onOpenRequirement={onOpenRequirement}
+              />
+            </section>
+          ) : null}
+
+          <div className="flex justify-end">
+            <button
+              onClick={onDelete}
+              disabled={saving}
+              className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+            >
+              Delete overview item
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function TicketForm({
   initial,
   saving,
@@ -2361,6 +3009,313 @@ function TicketForm({
         {saving ? "Saving..." : submitLabel}
       </button>
     </form>
+  );
+}
+
+function OverviewRequirementForm({
+  initial,
+  products,
+  requirements,
+  saving,
+  submitLabel,
+  onDirtyChange,
+  onSubmit,
+}: {
+  initial: OverviewRequirementDraft;
+  products: string[];
+  requirements: Requirement[];
+  saving: boolean;
+  submitLabel: string;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSubmit: (draft: OverviewRequirementDraft) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState<OverviewRequirementDraft>(initial);
+  const [baseline, setBaseline] = useState<OverviewRequirementDraft>(initial);
+  const [requirementPickerOpen, setRequirementPickerOpen] = useState(false);
+  const [requirementQuery, setRequirementQuery] = useState("");
+
+  const selectableRequirements = requirements.filter((requirement) => {
+    const query = requirementQuery.trim().toLowerCase();
+    if (!query) {
+      return true;
+    }
+    return [
+      requirement.id,
+      requirement.title,
+      requirement.details,
+      requirement.status,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
+  });
+
+  function updateDraft(nextDraft: OverviewRequirementDraft) {
+    setDraft(nextDraft);
+    onDirtyChange?.(!overviewRequirementDraftsEqual(nextDraft, baseline));
+  }
+
+  function addLinkedRequirement(requirementId: string) {
+    if (draft.linked_requirements.includes(requirementId)) {
+      return;
+    }
+    updateDraft({
+      ...draft,
+      linked_requirements: [...draft.linked_requirements, requirementId],
+    });
+  }
+
+  function removeLinkedRequirement(requirementId: string) {
+    updateDraft({
+      ...draft,
+      linked_requirements: draft.linked_requirements.filter(
+        (current) => current !== requirementId,
+      ),
+    });
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSubmit(draft);
+    setBaseline(draft);
+    onDirtyChange?.(false);
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <Field label="Product">
+        <select
+          required
+          value={draft.product}
+          onChange={(event) =>
+            updateDraft({ ...draft, product: event.target.value })
+          }
+          className="form-input"
+        >
+          <option value="" disabled>
+            Select product
+          </option>
+          {products.map((product) => (
+            <option key={product} value={product}>
+              {product}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {products.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+          Add at least one model or service before creating overview items.
+        </div>
+      ) : null}
+      <TextListEditor
+        label="Simple requirements"
+        values={draft.simple_requirements}
+        placeholder="Add one sentence"
+        onChange={(simple_requirements) =>
+          updateDraft({ ...draft, simple_requirements })
+        }
+      />
+      <div>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <span className="block text-xs font-medium text-slate-600">
+            Linked requirements
+          </span>
+          <button
+            type="button"
+            onClick={() => setRequirementPickerOpen(true)}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            Add requirement
+          </button>
+        </div>
+        {draft.linked_requirements.length > 0 ? (
+          <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+            {draft.linked_requirements.map((requirementId) => (
+              <span
+                key={requirementId}
+                className="relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 pr-5 text-xs font-medium text-slate-700"
+              >
+                {requirementId}
+                <button
+                  type="button"
+                  onClick={() => removeLinkedRequirement(requirementId)}
+                  className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                  aria-label={`Remove ${requirementId}`}
+                >
+                  x
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+            No linked requirements selected.
+          </div>
+        )}
+      </div>
+      <Field label="Remark">
+        <textarea
+          value={draft.remark}
+          onChange={(event) =>
+            updateDraft({ ...draft, remark: event.target.value })
+          }
+          className="form-input min-h-24 resize-y"
+          placeholder="Context, deployment notes, or certification detail"
+        />
+      </Field>
+      {requirementPickerOpen ? (
+        <Overlay>
+          <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Add linked requirement</h3>
+              <button
+                type="button"
+                onClick={() => setRequirementPickerOpen(false)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+              >
+                Close
+              </button>
+            </div>
+            <input
+              value={requirementQuery}
+              onChange={(event) => setRequirementQuery(event.target.value)}
+              className="mb-3 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+              placeholder="Search by requirement ID, title, status, or details"
+            />
+            <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+              {selectableRequirements.map((requirement) => {
+                const selected = draft.linked_requirements.includes(
+                  requirement.id,
+                );
+                return (
+                  <button
+                    key={requirement.id}
+                    type="button"
+                    onClick={() => {
+                      addLinkedRequirement(requirement.id);
+                      setRequirementPickerOpen(false);
+                      setRequirementQuery("");
+                    }}
+                    disabled={selected}
+                    className={`w-full rounded-lg border p-3 text-left transition ${
+                      selected
+                        ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">
+                          [{requirement.id}] {requirement.title}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                          {requirement.details || "No details."}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        {selected ? (
+                          <span className="rounded-md bg-slate-200 px-2 py-1 text-xs font-medium">
+                            Selected
+                          </span>
+                        ) : (
+                          <RequirementStatusBadge status={requirement.status} />
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+              {selectableRequirements.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                  No requirements match this search.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </Overlay>
+      ) : null}
+      <button
+        disabled={saving || products.length === 0}
+        className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+      >
+        {saving ? "Saving..." : submitLabel}
+      </button>
+    </form>
+  );
+}
+
+function TextListEditor({
+  label,
+  values,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  values: string[];
+  placeholder: string;
+  onChange: (values: string[]) => void;
+}) {
+  const [value, setValue] = useState("");
+
+  function addValue() {
+    const nextValue = value.trim();
+    if (!nextValue || values.includes(nextValue)) {
+      return;
+    }
+    onChange([...values, nextValue]);
+    setValue("");
+  }
+
+  return (
+    <div>
+      <div className="mb-1 block text-xs font-medium text-slate-600">
+        {label}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addValue();
+            }
+          }}
+          className="form-input"
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          onClick={addValue}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+        >
+          Add
+        </button>
+      </div>
+      {values.length > 0 ? (
+        <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          {values.map((item) => (
+            <div
+              key={item}
+              className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            >
+              <span>{item}</span>
+              <button
+                type="button"
+                onClick={() => onChange(values.filter((current) => current !== item))}
+                className="text-xs font-medium text-red-600 hover:text-red-700"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+          No {label.toLowerCase()} added.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2857,42 +3812,6 @@ function Field({
   );
 }
 
-function RelatedTicketChips({
-  ticketIds,
-  tickets,
-  onOpenTicket,
-}: {
-  ticketIds: string[];
-  tickets: Ticket[];
-  onOpenTicket: (ticketId: string) => void;
-}) {
-  return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      {ticketIds.map((ticketId) => {
-        const exists = tickets.some((ticket) => ticket.id === ticketId);
-        return (
-          <button
-            key={ticketId}
-            type="button"
-            disabled={!exists}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpenTicket(ticketId);
-            }}
-            className={`rounded-md border px-2 py-1 text-xs font-medium ${
-              exists
-                ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-            }`}
-          >
-            {ticketId}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function RelatedTicketRows({
   ticketIds,
   tickets,
@@ -2922,6 +3841,59 @@ function RelatedTicketRows({
             <div className="line-clamp-2 text-sm font-semibold">
               [{ticketId}]: {ticket?.title ?? "Ticket not found"}
             </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LinkedRequirementChips({
+  requirementIds,
+  requirements,
+  onOpenRequirement,
+}: {
+  requirementIds: string[];
+  requirements: Requirement[];
+  onOpenRequirement: (requirementId: string) => void;
+}) {
+  if (requirementIds.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+        No linked requirements.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {requirementIds.map((requirementId) => {
+        const requirement = requirements.find(
+          (current) => current.id === requirementId,
+        );
+        if (!requirement) {
+          return (
+            <span
+              key={requirementId}
+              className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-400"
+            >
+              {requirementId}
+            </span>
+          );
+        }
+
+        return (
+          <button
+            key={requirementId}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenRequirement(requirementId);
+            }}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            title={requirement.title}
+          >
+            {requirementId}
           </button>
         );
       })}
@@ -3006,6 +3978,15 @@ function Toast({ message }: { message: string }) {
       {message}
     </div>
   );
+}
+
+function projectModeLabel(mode: ProjectMode) {
+  const labels: Record<ProjectMode, string> = {
+    overview: "Overview",
+    tickets: "Tickets",
+    requirements: "Requirements",
+  };
+  return labels[mode];
 }
 
 function projectApiPath(key: string) {
@@ -3099,6 +4080,61 @@ function requirementTimelineDraftForApi(
   };
 }
 
+function overviewToSettingsDraft(overview: Overview): OverviewSettingsDraft {
+  return {
+    models: overview.models,
+    others: overview.others,
+    description: overview.description,
+  };
+}
+
+function overviewSettingsDraftsEqual(
+  left: OverviewSettingsDraft,
+  right: OverviewSettingsDraft,
+) {
+  return (
+    left.models.join("\n") === right.models.join("\n") &&
+    left.others.join("\n") === right.others.join("\n") &&
+    left.description === right.description
+  );
+}
+
+function overviewRequirementToDraft(
+  requirement: OverviewRequirement,
+): OverviewRequirementDraft {
+  return {
+    product: requirement.product,
+    simple_requirements: requirement.simple_requirements,
+    linked_requirements: requirement.linked_requirements,
+    remark: requirement.remark,
+  };
+}
+
+function overviewRequirementDraftForApi(
+  draft: OverviewRequirementDraft,
+): OverviewRequirementDraft {
+  return {
+    product: draft.product,
+    simple_requirements: draft.simple_requirements,
+    linked_requirements: draft.linked_requirements,
+    remark: draft.remark,
+  };
+}
+
+function overviewRequirementDraftsEqual(
+  left: OverviewRequirementDraft,
+  right: OverviewRequirementDraft,
+) {
+  return (
+    left.product === right.product &&
+    left.simple_requirements.join("\n") ===
+      right.simple_requirements.join("\n") &&
+    left.linked_requirements.join("\n") ===
+      right.linked_requirements.join("\n") &&
+    left.remark === right.remark
+  );
+}
+
 function flattenDashboardTickets(
   data: DashboardData | null,
 ): DashboardTicket[] {
@@ -3184,13 +4220,6 @@ function dashboardFilterLabel(filter: DashboardFilter) {
     resolved: "Resolved",
   };
   return labels[filter];
-}
-
-function percent(value: number, total: number) {
-  if (total <= 0) {
-    return 0;
-  }
-  return (value / total) * 100;
 }
 
 function readRecentProjects(): RecentProject[] {

@@ -5,6 +5,10 @@ import {
   EVENT_ROLES,
   EventInput,
   DashboardData,
+  Overview,
+  OverviewInput,
+  OverviewRequirement,
+  OverviewRequirementInput,
   PRIORITIES,
   PROJECT_PREFIX,
   ProjectInfo,
@@ -29,6 +33,13 @@ const DEFAULT_PROJECT: ProjectInfo = {
   status: "active",
   description: "",
   created_at: "",
+};
+
+const EMPTY_OVERVIEW: Overview = {
+  models: [],
+  others: [],
+  description: "",
+  requirements: [],
 };
 
 export function getProjectsRoot() {
@@ -196,6 +207,79 @@ export async function writeRequirements(key: string, requirements: Requirement[]
   await writeJsonAtomic(path.join(projectDir(key), "requirements.json"), requirements);
 }
 
+export async function readOverview(key: string): Promise<Overview> {
+  await readProject(key);
+  const overview = await readJson<Partial<Overview>>(path.join(projectDir(key), "overview.json"), EMPTY_OVERVIEW);
+  return normalizeOverview(overview);
+}
+
+export async function writeOverview(key: string, overview: Overview) {
+  await readProject(key);
+  await writeJsonAtomic(path.join(projectDir(key), "overview.json"), normalizeOverview(overview));
+}
+
+export function updateOverviewPayload(existing: Overview, input: OverviewInput): Overview {
+  const nextModels = input.models === undefined ? existing.models : normalizeTextList(input.models);
+  const nextOthers = input.others === undefined ? existing.others : normalizeTextList(input.others);
+  const removedProducts = [...existing.models, ...existing.others].filter(
+    (product) => !nextModels.includes(product) && !nextOthers.includes(product),
+  );
+  const usedRemovedProduct = removedProducts.find((product) =>
+    existing.requirements.some((requirement) => requirement.product === product),
+  );
+
+  if (usedRemovedProduct) {
+    throw new Error(`${usedRemovedProduct} is used by overview requirements and cannot be removed.`);
+  }
+
+  return normalizeOverview({
+    ...existing,
+    models: nextModels,
+    others: nextOthers,
+    description: input.description === undefined ? existing.description : cleanText(input.description),
+  });
+}
+
+export function createOverviewRequirementPayload(
+  input: OverviewRequirementInput,
+  existing: Overview,
+): OverviewRequirement {
+  return normalizeOverviewRequirement(
+    {
+      id: nextOverviewRequirementId(existing.requirements),
+      product: cleanText(input.product),
+      simple_requirements: normalizeTextList(input.simple_requirements),
+      linked_requirements: normalizeRequirementLinks(input.linked_requirements),
+      remark: cleanText(input.remark),
+      created_at: beijingNowIsoString(),
+    },
+    overviewProducts(existing),
+  );
+}
+
+export function updateOverviewRequirementPayload(
+  existingRequirement: OverviewRequirement,
+  input: OverviewRequirementInput,
+  overview: Overview,
+): OverviewRequirement {
+  return normalizeOverviewRequirement(
+    {
+      ...existingRequirement,
+      product: input.product === undefined ? existingRequirement.product : cleanText(input.product),
+      simple_requirements:
+        input.simple_requirements === undefined
+          ? existingRequirement.simple_requirements
+          : normalizeTextList(input.simple_requirements),
+      linked_requirements:
+        input.linked_requirements === undefined
+          ? existingRequirement.linked_requirements
+          : normalizeRequirementLinks(input.linked_requirements),
+      remark: input.remark === undefined ? existingRequirement.remark : cleanText(input.remark),
+    },
+    overviewProducts(overview),
+  );
+}
+
 export function createRequirementPayload(input: RequirementInput, existing: Requirement[]): Requirement {
   const now = beijingNowIsoString();
   return normalizeRequirement({
@@ -343,6 +427,43 @@ function normalizeRequirement(requirement: Partial<Requirement>): Requirement {
   };
 }
 
+function normalizeOverview(overview: Partial<Overview>): Overview {
+  const models = normalizeTextList(overview.models);
+  const others = normalizeTextList(overview.others);
+  const products = [...models, ...others];
+
+  return {
+    models,
+    others,
+    description: cleanText(overview.description),
+    requirements: Array.isArray(overview.requirements)
+      ? overview.requirements.map((requirement) => normalizeOverviewRequirement(requirement, products))
+      : [],
+  };
+}
+
+function normalizeOverviewRequirement(
+  requirement: Partial<OverviewRequirement>,
+  products: string[],
+): OverviewRequirement {
+  const product = cleanText(requirement.product);
+  if (!product) {
+    throw new Error("Overview requirement product is required.");
+  }
+  if (!products.includes(product)) {
+    throw new Error(`${product} is not listed in overview models or services.`);
+  }
+
+  return {
+    id: cleanText(requirement.id) || "OVR-001",
+    product,
+    simple_requirements: normalizeTextList(requirement.simple_requirements),
+    linked_requirements: normalizeRequirementLinks(requirement.linked_requirements),
+    remark: cleanText(requirement.remark),
+    created_at: cleanText(requirement.created_at) || beijingNowIsoString(),
+  };
+}
+
 function normalizeRequirementTimeline(timeline: unknown): RequirementTimelineItem[] {
   return Array.isArray(timeline) ? timeline.map(normalizeRequirementTimelineItem).sort(sortRequirementTimeline) : [];
 }
@@ -358,6 +479,14 @@ function normalizeRelatedTickets(relatedTickets: unknown): string[] {
   return Array.isArray(relatedTickets)
     ? Array.from(new Set(relatedTickets.map(cleanText).filter(Boolean)))
     : [];
+}
+
+function normalizeRequirementLinks(requirements: unknown): string[] {
+  return normalizeTextList(requirements);
+}
+
+function normalizeTextList(values: unknown): string[] {
+  return Array.isArray(values) ? Array.from(new Set(values.map(cleanText).filter(Boolean))) : [];
 }
 
 function cleanText(value: unknown) {
@@ -384,6 +513,18 @@ function nextRequirementId(existing: Requirement[]) {
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
   return `REQ-${String(highest + 1).padStart(3, "0")}`;
+}
+
+function nextOverviewRequirementId(existing: OverviewRequirement[]) {
+  const highest = existing.reduce((max, requirement) => {
+    const match = requirement.id.match(/^OVR-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+  return `OVR-${String(highest + 1).padStart(3, "0")}`;
+}
+
+function overviewProducts(overview: Overview) {
+  return [...overview.models, ...overview.others];
 }
 
 function ticketPrefix(projectName: string) {

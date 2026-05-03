@@ -78,3 +78,22 @@ export type Requirement = {
 
 export type RequirementInput = Partial<Omit<Requirement, "id" | "created_at" | "last_updated">>;
 export type RequirementTimelineInput = Partial<RequirementTimelineItem>;
+
+export type OverviewRequirement = {
+  id: string;
+  product: string;
+  simple_requirements: string[];
+  linked_requirements: string[];
+  remark: string;
+  created_at: string;
+};
+
+export type Overview = {
+  models: string[];
+  others: string[];
+  description: string;
+  requirements: OverviewRequirement[];
+};
+
+export type OverviewInput = Partial<Omit<Overview, "requirements">>;
+export type OverviewRequirementInput = Partial<Omit<OverviewRequirement, "id" | "created_at">>;
