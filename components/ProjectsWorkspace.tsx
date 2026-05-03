@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Image from "next/image";
 import { APP_TIME_ZONE, beijingTodayDate } from "@/lib/time";
 import {
@@ -217,6 +224,7 @@ export default function ProjectsWorkspace() {
   const [selectedOverviewRequirementDirty, setSelectedOverviewRequirementDirty] =
     useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const loadProjectRequestId = useRef(0);
 
   const selectedTicket =
     tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
@@ -507,10 +515,15 @@ export default function ProjectsWorkspace() {
     if (!canLeaveProjectWork()) {
       return;
     }
+    const requestId = loadProjectRequestId.current + 1;
+    loadProjectRequestId.current = requestId;
     setSelectedFolder(folder);
     setSelectedTicketId("");
     setSelectedRequirementId("");
     setSelectedOverviewRequirementId("");
+    setOverview(emptyOverview);
+    setTickets([]);
+    setRequirements([]);
     setSelectedTicketDirty(false);
     setSelectedRequirementDirty(false);
     setOverviewDirty(false);
@@ -524,20 +537,32 @@ export default function ProjectsWorkspace() {
       const data = await api<{ project: ProjectInfo; tickets: Ticket[] }>(
         `${projectApiPath(folder)}/tickets`,
       );
+      if (loadProjectRequestId.current !== requestId) {
+        return;
+      }
       setSelectedProject(data.project);
       setTickets(data.tickets);
       const overviewData = await api<{ overview: Overview }>(
         `${projectApiPath(folder)}/overview`,
       );
+      if (loadProjectRequestId.current !== requestId) {
+        return;
+      }
       setOverview(overviewData.overview);
       const requirementsData = await api<{ requirements: Requirement[] }>(
         `${projectApiPath(folder)}/requirements`,
       );
+      if (loadProjectRequestId.current !== requestId) {
+        return;
+      }
       setRequirements(requirementsData.requirements);
       setProjectMode(options.ticketId ? "tickets" : "overview");
       setSelectedTicketId(options.ticketId ?? "");
       rememberRecentProject(folder, data.project.project_name);
     } catch (requestError) {
+      if (loadProjectRequestId.current !== requestId) {
+        return;
+      }
       setError((requestError as Error).message);
       setSelectedProject(null);
       setOverview(emptyOverview);
@@ -1480,6 +1505,7 @@ function OverviewWorkspace({
   return (
     <div className="mt-6 space-y-5">
       <OverviewSettingsPanel
+        key={overviewSettingsKey(overview)}
         overview={overview}
         saving={saving}
         onDirtyChange={onSettingsDirtyChange}
@@ -4086,6 +4112,14 @@ function overviewToSettingsDraft(overview: Overview): OverviewSettingsDraft {
     others: overview.others,
     description: overview.description,
   };
+}
+
+function overviewSettingsKey(overview: Overview) {
+  return JSON.stringify({
+    models: overview.models,
+    others: overview.others,
+    description: overview.description,
+  });
 }
 
 function overviewSettingsDraftsEqual(
