@@ -45,6 +45,15 @@ export type TimelineEvent = {
   content: string;
 };
 
+export type LocalFileReference = {
+  id: string;
+  path: string;
+  name: string;
+  size?: number;
+  modified_at?: string;
+  added_at: string;
+};
+
 export type Ticket = {
   id: string;
   uuid?: string;
@@ -56,6 +65,7 @@ export type Ticket = {
   summary: string;
   next_action: string;
   events: TimelineEvent[];
+  references: LocalFileReference[];
 };
 
 export type TicketInput = Partial<Omit<Ticket, "id" | "uuid" | "created_at" | "updated_at">>;
@@ -74,6 +84,7 @@ export type Requirement = {
   details: string;
   timeline: RequirementTimelineItem[];
   related_tickets: string[];
+  references: LocalFileReference[];
   created_at: string;
   last_updated: string;
 };

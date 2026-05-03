@@ -5,6 +5,7 @@ import {
   EVENT_ROLES,
   EventInput,
   DashboardData,
+  LocalFileReference,
   Overview,
   OverviewInput,
   OverviewRequirement,
@@ -292,6 +293,7 @@ export function createRequirementPayload(input: RequirementInput, existing: Requ
     details: cleanText(input.details),
     timeline: normalizeRequirementTimeline(input.timeline),
     related_tickets: normalizeRelatedTickets(input.related_tickets),
+    references: normalizeLocalFileReferences(input.references),
     created_at: now,
     last_updated: now,
   });
@@ -308,6 +310,10 @@ export function updateRequirementPayload(existing: Requirement, input: Requireme
     details: input.details === undefined ? existing.details : cleanText(input.details),
     timeline: input.timeline ? normalizeRequirementTimeline(input.timeline) : existing.timeline,
     related_tickets: input.related_tickets ? normalizeRelatedTickets(input.related_tickets) : existing.related_tickets,
+    references:
+      input.references === undefined
+        ? existing.references
+        : normalizeLocalFileReferences(input.references),
     last_updated: beijingNowIsoString(),
   });
 }
@@ -342,6 +348,7 @@ export function createTicketPayload(input: TicketInput, existing: Ticket[], proj
     summary: cleanText(input.summary),
     next_action: cleanText(input.next_action),
     events: normalizeEvents(input.events),
+    references: normalizeLocalFileReferences(input.references),
   });
 }
 
@@ -354,6 +361,10 @@ export function updateTicketPayload(existing: Ticket, input: TicketInput): Ticke
     summary: cleanText(input.summary),
     next_action: cleanText(input.next_action),
     events: input.events ? normalizeEvents(input.events) : existing.events,
+    references:
+      input.references === undefined
+        ? existing.references
+        : normalizeLocalFileReferences(input.references),
     updated_at: beijingNowIsoString(),
   });
 }
@@ -403,6 +414,7 @@ function normalizeTicket(ticket: Ticket): Ticket {
     summary: cleanText(ticket.summary),
     next_action: cleanText(ticket.next_action),
     events: normalizeEvents(ticket.events),
+    references: normalizeLocalFileReferences(ticket.references),
   };
 }
 
@@ -428,6 +440,7 @@ function normalizeRequirement(requirement: Partial<Requirement>): Requirement {
     details: cleanText(requirement.details),
     timeline: normalizeRequirementTimeline(requirement.timeline),
     related_tickets: normalizeRelatedTickets(requirement.related_tickets),
+    references: normalizeLocalFileReferences(requirement.references),
     created_at: cleanText(requirement.created_at) || now,
     last_updated: cleanText(requirement.last_updated) || now,
   };
@@ -486,6 +499,36 @@ function normalizeRelatedTickets(relatedTickets: unknown): string[] {
   return Array.isArray(relatedTickets)
     ? Array.from(new Set(relatedTickets.map(cleanText).filter(Boolean)))
     : [];
+}
+
+function normalizeLocalFileReferences(references: unknown): LocalFileReference[] {
+  if (!Array.isArray(references)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  return references.reduce<LocalFileReference[]>((nextReferences, reference) => {
+    if (!reference || typeof reference !== "object") {
+      return nextReferences;
+    }
+
+    const current = reference as Partial<LocalFileReference>;
+    const referencePath = cleanText(current.path);
+    if (!referencePath || seen.has(referencePath)) {
+      return nextReferences;
+    }
+    seen.add(referencePath);
+
+    nextReferences.push({
+      id: cleanText(current.id) || randomUUID(),
+      path: referencePath,
+      name: cleanText(current.name) || path.basename(referencePath),
+      size: typeof current.size === "number" && Number.isFinite(current.size) ? current.size : undefined,
+      modified_at: cleanText(current.modified_at) || undefined,
+      added_at: cleanText(current.added_at) || beijingNowIsoString(),
+    });
+    return nextReferences;
+  }, []);
 }
 
 function normalizeRequirementLinks(requirements: unknown): string[] {

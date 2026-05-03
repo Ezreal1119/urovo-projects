@@ -3,6 +3,7 @@
 import {
   FormEvent,
   KeyboardEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -147,6 +148,25 @@ type ProjectAsset = {
   downloadUrl: string;
   previewUrl?: string;
   originalFilename: string;
+};
+
+type ProjectReference = {
+  id: string;
+  path: string;
+  name: string;
+  size?: number;
+  modified_at?: string;
+  added_at: string;
+  exists: boolean;
+  url: string;
+};
+
+type ReferenceBrowseEntry = {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+  size?: number;
+  modified_at?: string;
 };
 
 const TICKETS_PER_PAGE = 10;
@@ -1591,6 +1611,8 @@ export default function ProjectsWorkspace() {
         <TicketDrawer
           ticket={selectedTicket}
           assetApiPath={`${projectApiPath(selectedFolder)}/tickets/${selectedTicket.id}/assets`}
+          browseApiPath={`${projectApiPath(selectedFolder)}/references/browse`}
+          referenceApiPath={`${projectApiPath(selectedFolder)}/tickets/${selectedTicket.id}/references`}
           saving={saving}
           onClose={closeSelectedTicket}
           onDirtyChange={setSelectedTicketDirty}
@@ -1608,6 +1630,8 @@ export default function ProjectsWorkspace() {
         <RequirementDrawer
           requirement={selectedRequirement}
           assetApiPath={`${projectApiPath(selectedFolder)}/requirements/${selectedRequirement.id}/assets`}
+          browseApiPath={`${projectApiPath(selectedFolder)}/references/browse`}
+          referenceApiPath={`${projectApiPath(selectedFolder)}/requirements/${selectedRequirement.id}/references`}
           tickets={tickets}
           saving={saving}
           onClose={closeSelectedRequirement}
@@ -3466,6 +3490,8 @@ function ProjectJsonResultDialog({
 function TicketDrawer({
   ticket,
   assetApiPath,
+  browseApiPath,
+  referenceApiPath,
   saving,
   onClose,
   onDirtyChange,
@@ -3477,6 +3503,8 @@ function TicketDrawer({
 }: {
   ticket: Ticket;
   assetApiPath: string;
+  browseApiPath: string;
+  referenceApiPath: string;
   saving: boolean;
   onClose: () => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -3486,6 +3514,9 @@ function TicketDrawer({
   onUpdateEvent: (index: number, draft: EventDraft) => void;
   onDeleteEvent: (index: number) => void;
 }) {
+  const formId = "ticket-detail-form";
+  const [addingEvent, setAddingEvent] = useState(false);
+
   useEffect(() => {
     onDirtyChange(false);
   }, [onDirtyChange, ticket.id]);
@@ -3505,23 +3536,41 @@ function TicketDrawer({
             </div>
             <h2 className="mt-1 text-xl font-semibold">{ticket.title}</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="submit"
+              form={formId}
+              disabled={saving}
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="space-y-6 p-5">
           <TicketForm
             key={ticket.id}
+            formId={formId}
             initial={ticketToDraft(ticket)}
             saving={saving}
             submitLabel="Save changes"
             showNextAction={false}
+            showSubmitButton={false}
             onDirtyChange={onDirtyChange}
             onSubmit={saveTicket}
+          />
+          <ReferenceManager
+            key={`ticket-references-${ticket.id}`}
+            browseApiPath={browseApiPath}
+            referenceApiPath={referenceApiPath}
+            initialCount={ticket.references.length}
           />
           <AssetManager assetApiPath={assetApiPath} />
           <div className="flex justify-end">
@@ -3564,16 +3613,28 @@ function TicketDrawer({
                 No timeline events yet.
               </div>
             ) : null}
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setAddingEvent(true)}
+                disabled={saving}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:opacity-60"
+              >
+                Add
+              </button>
+            </div>
           </section>
 
-          <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <h3 className="mb-3 text-sm font-semibold">Add timeline event</h3>
-            <EventForm
+          {addingEvent ? (
+            <TimelineEventDialog
               saving={saving}
-              submitLabel="Add event"
-              onSubmit={onAddEvent}
+              onClose={() => setAddingEvent(false)}
+              onSubmit={(draft) => {
+                onAddEvent(draft);
+                setAddingEvent(false);
+              }}
             />
-          </section>
+          ) : null}
         </div>
       </aside>
     </div>
@@ -3583,6 +3644,8 @@ function TicketDrawer({
 function RequirementDrawer({
   requirement,
   assetApiPath,
+  browseApiPath,
+  referenceApiPath,
   tickets,
   saving,
   onClose,
@@ -3596,6 +3659,8 @@ function RequirementDrawer({
 }: {
   requirement: Requirement;
   assetApiPath: string;
+  browseApiPath: string;
+  referenceApiPath: string;
   tickets: Ticket[];
   saving: boolean;
   onClose: () => void;
@@ -3607,6 +3672,9 @@ function RequirementDrawer({
   onUpdateTimeline: (index: number, draft: RequirementTimelineDraft) => void;
   onDeleteTimeline: (index: number) => void;
 }) {
+  const formId = "requirement-detail-form";
+  const [addingTimeline, setAddingTimeline] = useState(false);
+
   useEffect(() => {
     onDirtyChange(false);
   }, [onDirtyChange, requirement.id]);
@@ -3626,23 +3694,41 @@ function RequirementDrawer({
             </div>
             <h2 className="mt-1 text-xl font-semibold">{requirement.title}</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="submit"
+              form={formId}
+              disabled={saving}
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="space-y-6 p-5">
           <RequirementForm
             key={requirement.id}
+            formId={formId}
             initial={requirementToDraft(requirement)}
             tickets={tickets}
             saving={saving}
             submitLabel="Save changes"
+            showSubmitButton={false}
             onDirtyChange={onDirtyChange}
             onSubmit={saveRequirement}
+          />
+          <ReferenceManager
+            key={`requirement-references-${requirement.id}`}
+            browseApiPath={browseApiPath}
+            referenceApiPath={referenceApiPath}
+            initialCount={requirement.references.length}
           />
           <AssetManager assetApiPath={assetApiPath} />
 
@@ -3697,19 +3783,501 @@ function RequirementDrawer({
                 No requirement updates yet.
               </div>
             ) : null}
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setAddingTimeline(true)}
+                disabled={saving}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:opacity-60"
+              >
+                Add
+              </button>
+            </div>
           </section>
 
-          <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <h3 className="mb-3 text-sm font-semibold">Add timeline update</h3>
-            <RequirementTimelineForm
+          {addingTimeline ? (
+            <RequirementTimelineDialog
               saving={saving}
-              submitLabel="Add update"
-              onSubmit={onAddTimeline}
+              onClose={() => setAddingTimeline(false)}
+              onSubmit={(draft) => {
+                onAddTimeline(draft);
+                setAddingTimeline(false);
+              }}
             />
-          </section>
+          ) : null}
         </div>
       </aside>
     </div>
+  );
+}
+
+function TimelineEventDialog({
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (draft: EventDraft) => void;
+}) {
+  return (
+    <Overlay>
+      <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">Add timeline event</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+        <EventForm saving={saving} submitLabel="Add event" onSubmit={onSubmit} />
+      </div>
+    </Overlay>
+  );
+}
+
+function RequirementTimelineDialog({
+  saving,
+  onClose,
+  onSubmit,
+}: {
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (draft: RequirementTimelineDraft) => void;
+}) {
+  return (
+    <Overlay>
+      <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">Add timeline update</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+        <RequirementTimelineForm
+          saving={saving}
+          submitLabel="Add update"
+          onSubmit={onSubmit}
+        />
+      </div>
+    </Overlay>
+  );
+}
+
+function ReferenceManager({
+  browseApiPath,
+  referenceApiPath,
+  initialCount,
+}: {
+  browseApiPath: string;
+  referenceApiPath: string;
+  initialCount: number;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [showReferences, setShowReferences] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [referenceCountOverride, setReferenceCountOverride] = useState<number | null>(null);
+  const referenceCount = referenceCountOverride ?? initialCount;
+
+  const refreshReferences = useCallback((nextCount?: number) => {
+    if (nextCount !== undefined) {
+      setReferenceCountOverride(nextCount);
+    }
+    setRefreshKey((current) => current + 1);
+  }, []);
+
+  const updateReferenceCount = useCallback((nextCount?: number) => {
+    if (nextCount !== undefined) {
+      setReferenceCountOverride(nextCount);
+    }
+  }, []);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">References</h3>
+            <span className="rounded-md bg-white px-2 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
+              {referenceCount}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Link existing files from this project&apos;s docs folder.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+          >
+            Add Reference
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowReferences(true)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            View References
+          </button>
+        </div>
+      </div>
+
+      {showPicker ? (
+        <ReferencePickerDialog
+          browseApiPath={browseApiPath}
+          referenceApiPath={referenceApiPath}
+          onClose={() => setShowPicker(false)}
+          onChanged={refreshReferences}
+        />
+      ) : null}
+
+      {showReferences ? (
+        <ReferenceListDialog
+          key={refreshKey}
+          referenceApiPath={referenceApiPath}
+          onClose={() => setShowReferences(false)}
+          onChanged={updateReferenceCount}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function ReferencePickerDialog({
+  browseApiPath,
+  referenceApiPath,
+  onClose,
+  onChanged,
+}: {
+  browseApiPath: string;
+  referenceApiPath: string;
+  onClose: () => void;
+  onChanged: (nextCount?: number) => void;
+}) {
+  const [currentPath, setCurrentPath] = useState("docs");
+  const [entries, setEntries] = useState<ReferenceBrowseEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [missingDocs, setMissingDocs] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [addingPath, setAddingPath] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadEntries() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await api<{
+          currentPath: string;
+          entries: ReferenceBrowseEntry[];
+          missingDocs: boolean;
+        }>(`${browseApiPath}?path=${encodeURIComponent(currentPath)}`);
+        if (active) {
+          setCurrentPath(data.currentPath);
+          setEntries(data.entries);
+          setMissingDocs(data.missingDocs);
+        }
+      } catch (loadError) {
+        if (active) {
+          setError((loadError as Error).message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadEntries();
+    return () => {
+      active = false;
+    };
+  }, [browseApiPath, currentPath]);
+
+  async function addReference(entry: ReferenceBrowseEntry) {
+    setAddingPath(entry.path);
+    setError("");
+    setSuccess("");
+    try {
+      const data = await api<{ references: ProjectReference[] }>(referenceApiPath, {
+        method: "POST",
+        body: JSON.stringify({ path: entry.path }),
+      });
+      setSuccess(`${entry.name} added.`);
+      onChanged(data.references.length);
+    } catch (addError) {
+      setError((addError as Error).message);
+    } finally {
+      setAddingPath("");
+    }
+  }
+
+  return (
+    <Overlay>
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+          <div>
+            <h2 className="text-lg font-semibold">Add Reference</h2>
+            <p className="mt-1 text-sm text-slate-500">{currentPath}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="overflow-auto p-5">
+          {error ? (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+          {success ? (
+            <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+              {success}
+            </div>
+          ) : null}
+
+          {loading ? (
+            <EmptyState text="Loading docs folder..." />
+          ) : missingDocs ? (
+            <EmptyState text="No docs folder was found for this project." />
+          ) : (
+            <div className="space-y-2">
+              {currentPath !== "docs" ? (
+                <button
+                  type="button"
+                  onClick={() => setCurrentPath(parentReferencePath(currentPath))}
+                  className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-slate-300 hover:bg-white"
+                  aria-label="Go to parent folder"
+                >
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-slate-200 bg-white text-base font-semibold leading-none text-slate-500">
+                    ↑
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-950">
+                      Parent folder
+                    </span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {parentReferencePath(currentPath)}
+                    </span>
+                  </span>
+                </button>
+              ) : null}
+              {entries.length === 0 ? (
+                <EmptyState text="No files found in this docs folder." />
+              ) : null}
+              {entries.map((entry) => (
+                <div
+                  key={entry.path}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  {entry.kind === "directory" ? (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPath(entry.path)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="truncate text-sm font-semibold text-slate-950">
+                        Folder: {entry.name}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>{entry.path}</span>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-slate-950">
+                        {entry.name}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>{entry.path}</span>
+                        <span>{formatBytes(entry.size ?? 0)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {entry.kind === "file" ? (
+                    <button
+                      type="button"
+                      onClick={() => void addReference(entry)}
+                      disabled={addingPath === entry.path}
+                      className="shrink-0 rounded-md bg-slate-950 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      {addingPath === entry.path ? "Adding..." : "Add"}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+function ReferenceListDialog({
+  referenceApiPath,
+  onClose,
+  onChanged,
+}: {
+  referenceApiPath: string;
+  onClose: () => void;
+  onChanged: (nextCount?: number) => void;
+}) {
+  const [references, setReferences] = useState<ProjectReference[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [removingId, setRemovingId] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadReferences() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await api<{ references: ProjectReference[] }>(referenceApiPath);
+        if (active) {
+          setReferences(data.references);
+          onChanged(data.references.length);
+        }
+      } catch (loadError) {
+        if (active) {
+          setError((loadError as Error).message);
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadReferences();
+    return () => {
+      active = false;
+    };
+  }, [onChanged, referenceApiPath]);
+
+  async function removeReference(reference: ProjectReference) {
+    setRemovingId(reference.id);
+    setError("");
+    try {
+      const data = await api<{ references: ProjectReference[] }>(referenceApiPath, {
+        method: "DELETE",
+        body: JSON.stringify({ id: reference.id }),
+      });
+      setReferences(data.references);
+      onChanged(data.references.length);
+    } catch (removeError) {
+      setError((removeError as Error).message);
+    } finally {
+      setRemovingId("");
+    }
+  }
+
+  return (
+    <Overlay>
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+          <div>
+            <h2 className="text-lg font-semibold">References</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {loading
+                ? "Loading..."
+                : `${references.length} reference${references.length === 1 ? "" : "s"}`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="overflow-auto p-5">
+          {error ? (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          ) : null}
+          {loading ? (
+            <EmptyState text="Loading references..." />
+          ) : references.length === 0 ? (
+            <EmptyState text="No local document references yet." />
+          ) : (
+            <div className="space-y-2">
+              {references.map((reference) => (
+                <div
+                  key={reference.id}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <div className="truncate text-sm font-semibold text-slate-950">
+                          {reference.name}
+                        </div>
+                        {!reference.exists ? (
+                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
+                            Missing
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                        <span>{reference.path}</span>
+                        {reference.size ? <span>{formatBytes(reference.size)}</span> : null}
+                        {reference.modified_at ? (
+                          <span>{formatDateTimeFull(reference.modified_at)}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <a
+                        href={reference.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`inline-flex h-8 items-center justify-center rounded-md border border-slate-200 px-2.5 text-xs font-medium ${
+                          reference.exists
+                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                            : "pointer-events-none text-slate-300"
+                        }`}
+                      >
+                        Open
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => void removeReference(reference)}
+                        disabled={removingId === reference.id}
+                        className="inline-flex h-8 items-center justify-center rounded-md border border-red-200 px-2.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      >
+                        {removingId === reference.id ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Overlay>
   );
 }
 
@@ -4181,6 +4749,8 @@ function OverviewRequirementDrawer({
   onDelete: () => void;
   onOpenRequirement: (requirementId: string) => void;
 }) {
+  const formId = "overview-demand-detail-form";
+
   useEffect(() => {
     onDirtyChange(false);
   }, [onDirtyChange, requirement.id]);
@@ -4202,22 +4772,34 @@ function OverviewRequirementDrawer({
               {requirement.product || "Overview item"}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="submit"
+              form={formId}
+              disabled={saving || products.length === 0}
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="space-y-6 p-5">
           <OverviewRequirementForm
             key={requirement.id}
+            formId={formId}
             initial={overviewRequirementToDraft(requirement)}
             products={products}
             requirements={requirements}
             saving={saving}
             submitLabel="Save changes"
+            showSubmitButton={false}
             onDirtyChange={onDirtyChange}
             onSubmit={saveRequirement}
           />
@@ -4254,16 +4836,20 @@ function TicketForm({
   initial,
   saving,
   submitLabel,
+  formId,
   showNextAction = true,
   preventEnterSubmit = false,
+  showSubmitButton = true,
   onDirtyChange,
   onSubmit,
 }: {
   initial: TicketDraft;
   saving: boolean;
   submitLabel: string;
+  formId?: string;
   showNextAction?: boolean;
   preventEnterSubmit?: boolean;
+  showSubmitButton?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSubmit: (draft: TicketDraft) => void | Promise<void>;
 }) {
@@ -4294,6 +4880,7 @@ function TicketForm({
 
   return (
     <form
+      id={formId}
       onSubmit={submit}
       onKeyDown={preventKeyboardSubmit}
       className="space-y-4"
@@ -4369,12 +4956,14 @@ function TicketForm({
           />
         </Field>
       ) : null}
-      <button
-        disabled={saving}
-        className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-      >
-        {saving ? "Saving..." : submitLabel}
-      </button>
+      {showSubmitButton ? (
+        <button
+          disabled={saving}
+          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Saving..." : submitLabel}
+        </button>
+      ) : null}
     </form>
   );
 }
@@ -4385,6 +4974,8 @@ function OverviewRequirementForm({
   requirements,
   saving,
   submitLabel,
+  formId,
+  showSubmitButton = true,
   onDirtyChange,
   onSubmit,
 }: {
@@ -4393,6 +4984,8 @@ function OverviewRequirementForm({
   requirements: Requirement[];
   saving: boolean;
   submitLabel: string;
+  formId?: string;
+  showSubmitButton?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSubmit: (draft: OverviewRequirementDraft) => void | Promise<void>;
 }) {
@@ -4450,7 +5043,7 @@ function OverviewRequirementForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form id={formId} onSubmit={submit} className="space-y-4">
       <Field label="Product">
         <select
           required
@@ -4616,12 +5209,14 @@ function OverviewRequirementForm({
           </div>
         </Overlay>
       ) : null}
-      <button
-        disabled={saving || products.length === 0}
-        className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-      >
-        {saving ? "Saving..." : submitLabel}
-      </button>
+      {showSubmitButton ? (
+        <button
+          disabled={saving || products.length === 0}
+          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Saving..." : submitLabel}
+        </button>
+      ) : null}
     </form>
   );
 }
@@ -4638,6 +5233,9 @@ function TextListEditor({
   onChange: (values: string[]) => void;
 }) {
   const [value, setValue] = useState("");
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState("");
 
   function addValue() {
     const nextValue = value.trim();
@@ -4648,12 +5246,67 @@ function TextListEditor({
     setValue("");
   }
 
+  function startEdit(index: number) {
+    if (deleteMode) {
+      return;
+    }
+    setEditingIndex(index);
+    setEditingValue(values[index] ?? "");
+  }
+
+  function saveEdit(index: number) {
+    const nextValue = editingValue.trim();
+    setEditingIndex(null);
+    setEditingValue("");
+
+    if (!nextValue) {
+      return;
+    }
+
+    const duplicate = values.some(
+      (current, currentIndex) => currentIndex !== index && current === nextValue,
+    );
+    if (duplicate || values[index] === nextValue) {
+      return;
+    }
+
+    onChange(values.map((current, currentIndex) => (currentIndex === index ? nextValue : current)));
+  }
+
+  function cancelEdit() {
+    setEditingIndex(null);
+    setEditingValue("");
+  }
+
   return (
     <div>
-      <div className="mb-1 block text-xs font-medium text-slate-600">
-        {label}
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <span className="block text-xs font-medium text-slate-600">
+          {label}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={addValue}
+            disabled={!value.trim()}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteMode((current) => !current);
+              cancelEdit();
+            }}
+            disabled={values.length === 0}
+            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {deleteMode ? "Cancel" : "Delete"}
+          </button>
+        </div>
       </div>
-      <div className="flex gap-2">
+      <div>
         <input
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -4666,33 +5319,65 @@ function TextListEditor({
           className="form-input"
           placeholder={placeholder}
         />
-        <button
-          type="button"
-          onClick={addValue}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
-        >
-          Add
-        </button>
       </div>
       {values.length > 0 ? (
         <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-          {values.map((item) => (
-            <div
-              key={item}
-              className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-            >
-              <span>{item}</span>
-              <button
-                type="button"
-                onClick={() =>
-                  onChange(values.filter((current) => current !== item))
-                }
-                className="text-xs font-medium text-red-600 hover:text-red-700"
+          {values.map((item, index) => {
+            const editing = editingIndex === index;
+            return (
+              <div
+                key={`${item}-${index}`}
+                className={`relative rounded-md border border-slate-200 bg-white text-sm text-slate-700 ${
+                  deleteMode ? "pr-5" : ""
+                }`}
               >
-                Remove
-              </button>
-            </div>
-          ))}
+                {editing ? (
+                  <textarea
+                    value={editingValue}
+                    onChange={(event) => setEditingValue(event.target.value)}
+                    onBlur={() => saveEdit(index)}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelEdit();
+                      }
+                    }}
+                    className="min-h-20 w-full resize-y rounded-md border-0 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-slate-300"
+                    autoFocus
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startEdit(index)}
+                    disabled={deleteMode}
+                    className={`w-full whitespace-pre-wrap rounded-md px-3 py-2 text-left leading-6 ${
+                      deleteMode
+                        ? "cursor-default"
+                        : "hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    }`}
+                  >
+                    {item}
+                  </button>
+                )}
+                {deleteMode ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange(values.filter((_, currentIndex) => currentIndex !== index))
+                    }
+                    className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                    aria-label={`Remove ${item}`}
+                  >
+                    x
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
@@ -4708,6 +5393,8 @@ function RequirementForm({
   tickets,
   saving,
   submitLabel,
+  formId,
+  showSubmitButton = true,
   onDirtyChange,
   onSubmit,
 }: {
@@ -4715,6 +5402,8 @@ function RequirementForm({
   tickets: Ticket[];
   saving: boolean;
   submitLabel: string;
+  formId?: string;
+  showSubmitButton?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSubmit: (draft: RequirementDraft) => void | Promise<void>;
 }) {
@@ -4773,7 +5462,7 @@ function RequirementForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form id={formId} onSubmit={submit} className="space-y-4">
       <Field label="Title">
         <input
           required
@@ -4936,12 +5625,14 @@ function RequirementForm({
           </div>
         </Overlay>
       ) : null}
-      <button
-        disabled={saving}
-        className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-      >
-        {saving ? "Saving..." : submitLabel}
-      </button>
+      {showSubmitButton ? (
+        <button
+          disabled={saving}
+          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+        >
+          {saving ? "Saving..." : submitLabel}
+        </button>
+      ) : null}
     </form>
   );
 }
@@ -5499,6 +6190,15 @@ function formatBytes(bytes: number) {
   );
   const value = bytes / 1024 ** index;
   return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
+function parentReferencePath(currentPath: string) {
+  if (currentPath === "docs") {
+    return "docs";
+  }
+  const parts = currentPath.split("/").filter(Boolean);
+  parts.pop();
+  return parts.length === 0 ? "docs" : parts.join("/");
 }
 
 function ticketToDraft(ticket: Ticket): TicketDraft {
