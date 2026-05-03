@@ -126,6 +126,14 @@ type RecentProject = {
   viewedAt: string;
 };
 
+type ProjectJsonDraft = {
+  project_name: string;
+  country: string;
+  customer: string;
+  sales: string;
+  created_at: string;
+};
+
 const TICKETS_PER_PAGE = 10;
 const RECENT_PROJECTS_KEY = "urovo-projects:recent-projects";
 
@@ -167,6 +175,14 @@ const emptyOverviewRequirementDraft: OverviewRequirementDraft = {
   simple_requirements: [],
   linked_requirements: [],
   remark: "",
+};
+
+const emptyProjectJsonDraft: ProjectJsonDraft = {
+  project_name: "",
+  country: "",
+  customer: "",
+  sales: "",
+  created_at: todayDate(),
 };
 
 const statusLabels: Record<TicketStatus, string> = {
@@ -241,6 +257,9 @@ export default function ProjectsWorkspace() {
   const [showNewRequirement, setShowNewRequirement] = useState(false);
   const [showNewOverviewRequirement, setShowNewOverviewRequirement] =
     useState(false);
+  const [showProjectJsonGenerator, setShowProjectJsonGenerator] =
+    useState(false);
+  const [generatedProjectJson, setGeneratedProjectJson] = useState("");
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
   const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
@@ -956,6 +975,19 @@ export default function ProjectsWorkspace() {
     }
   }
 
+  function generateProjectJson(draft: ProjectJsonDraft) {
+    const project: ProjectInfo = {
+      project_id: createUuid(),
+      project_name: draft.project_name.trim(),
+      country: draft.country.trim(),
+      customer: draft.customer.trim(),
+      sales: draft.sales.trim(),
+      created_at: draft.created_at,
+    };
+    setGeneratedProjectJson(`${JSON.stringify(project, null, 2)}\n`);
+    setShowProjectJsonGenerator(false);
+  }
+
   async function updateOverviewRequirement(
     requirementId: string,
     draft: OverviewRequirementDraft,
@@ -1288,9 +1320,19 @@ export default function ProjectsWorkspace() {
             <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               Projects
             </h2>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-500">
-              {projects.length}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowProjectJsonGenerator(true)}
+                className="grid h-6 w-6 place-items-center rounded-md border border-slate-200 bg-white text-base leading-none text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                aria-label="Generate project JSON"
+              >
+                +
+              </button>
+              <span className="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-500">
+                {projects.length}
+              </span>
+            </div>
           </div>
           <input
             value={projectQuery}
@@ -1602,6 +1644,20 @@ export default function ProjectsWorkspace() {
           saving={saving}
           onClose={() => setShowNewOverviewRequirement(false)}
           onCreate={createOverviewRequirement}
+        />
+      ) : null}
+
+      {showProjectJsonGenerator ? (
+        <ProjectJsonGeneratorDialog
+          onClose={() => setShowProjectJsonGenerator(false)}
+          onGenerate={generateProjectJson}
+        />
+      ) : null}
+
+      {generatedProjectJson ? (
+        <ProjectJsonResultDialog
+          json={generatedProjectJson}
+          onClose={() => setGeneratedProjectJson("")}
         />
       ) : null}
 
@@ -3172,6 +3228,210 @@ function OverviewRequirementModal({
           onDirtyChange={setDirty}
           onSubmit={onCreate}
         />
+      </div>
+    </Overlay>
+  );
+}
+
+function ProjectJsonGeneratorDialog({
+  onClose,
+  onGenerate,
+}: {
+  onClose: () => void;
+  onGenerate: (draft: ProjectJsonDraft) => void;
+}) {
+  const [draft, setDraft] = useState<ProjectJsonDraft>(emptyProjectJsonDraft);
+  const dirty = !projectJsonDraftsEqual(draft, emptyProjectJsonDraft);
+  const canGenerate = Boolean(
+    draft.project_name.trim() &&
+      draft.country.trim() &&
+      draft.customer.trim() &&
+      draft.sales.trim() &&
+      draft.created_at,
+  );
+
+  function closeDialog() {
+    if (dirty && !confirm("Discard this project JSON draft?")) {
+      return;
+    }
+    onClose();
+  }
+
+  function updateDraft(nextDraft: ProjectJsonDraft) {
+    setDraft(nextDraft);
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canGenerate) {
+      return;
+    }
+    onGenerate(draft);
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">Generate Project JSON</h2>
+          <button
+            type="button"
+            onClick={closeDialog}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Project Name">
+              <input
+                value={draft.project_name}
+                onChange={(event) =>
+                  updateDraft({ ...draft, project_name: event.target.value })
+                }
+                className="form-input"
+                required
+              />
+            </Field>
+            <Field label="Country">
+              <input
+                value={draft.country}
+                onChange={(event) =>
+                  updateDraft({ ...draft, country: event.target.value })
+                }
+                className="form-input"
+                required
+              />
+            </Field>
+            <Field label="Customer">
+              <input
+                value={draft.customer}
+                onChange={(event) =>
+                  updateDraft({ ...draft, customer: event.target.value })
+                }
+                className="form-input"
+                required
+              />
+            </Field>
+            <Field label="Sales">
+              <input
+                value={draft.sales}
+                onChange={(event) =>
+                  updateDraft({ ...draft, sales: event.target.value })
+                }
+                className="form-input"
+                required
+              />
+            </Field>
+          </div>
+          <Field label="Created at">
+            <input
+              type="date"
+              value={draft.created_at}
+              onChange={(event) =>
+                updateDraft({ ...draft, created_at: event.target.value })
+              }
+              className="form-input max-w-52"
+              required
+            />
+          </Field>
+
+          <div className="flex justify-end border-t border-slate-100 pt-4">
+            <button
+              disabled={!canGenerate}
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Generate
+            </button>
+          </div>
+        </form>
+      </div>
+    </Overlay>
+  );
+}
+
+function ProjectJsonResultDialog({
+  json,
+  onClose,
+}: {
+  json: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copyBlocked, setCopyBlocked] = useState(false);
+
+  async function copyJson() {
+    setCopyBlocked(false);
+    const didCopy = await copyTextToClipboard(json);
+    if (!didCopy) {
+      setCopyBlocked(true);
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">project.json</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div
+          className={`overflow-hidden rounded-lg border transition ${
+            copied
+              ? "border-emerald-300 ring-2 ring-emerald-100"
+              : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              JSON
+            </span>
+            <button
+              type="button"
+              onClick={() => void copyJson()}
+              className={`grid h-8 w-8 place-items-center rounded-md border text-sm shadow-sm transition ${
+                copied
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-950"
+              }`}
+              aria-label={copied ? "Project JSON copied" : "Copy project JSON"}
+            >
+              {copied ? "✓" : "⧉"}
+            </button>
+          </div>
+          <pre className="max-h-[50vh] overflow-auto bg-slate-950 p-4 text-sm leading-6 text-slate-50">
+            <code>{json}</code>
+          </pre>
+        </div>
+
+        <div
+          className={`mt-3 min-h-5 text-sm font-medium transition ${
+            copied
+              ? "text-emerald-700"
+              : copyBlocked
+                ? "text-amber-700"
+                : "text-slate-400"
+          }`}
+          aria-live="polite"
+        >
+          {copied
+            ? "Copied to clipboard."
+            : copyBlocked
+              ? "Clipboard access blocked."
+              : " "}
+        </div>
       </div>
     </Overlay>
   );
@@ -4832,6 +5092,19 @@ function overviewRequirementDraftsEqual(
   );
 }
 
+function projectJsonDraftsEqual(
+  left: ProjectJsonDraft,
+  right: ProjectJsonDraft,
+) {
+  return (
+    left.project_name === right.project_name &&
+    left.country === right.country &&
+    left.customer === right.customer &&
+    left.sales === right.sales &&
+    left.created_at === right.created_at
+  );
+}
+
 function flattenDashboardTickets(
   data: DashboardData | null,
 ): DashboardTicket[] {
@@ -5115,4 +5388,61 @@ function dateInputValue(value: string) {
 
 function todayDate() {
   return beijingTodayDate();
+}
+
+function createUuid() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  );
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
+}
+
+async function copyTextToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return copyTextWithTextarea(text);
+  }
+}
+
+function copyTextWithTextarea(text: string) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
 }
