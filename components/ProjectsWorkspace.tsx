@@ -1198,11 +1198,12 @@ export default function ProjectsWorkspace() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
-      <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white/90 px-5 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 shadow-sm shadow-slate-200/40 backdrop-blur">
+        <div className="flex min-h-16 items-center gap-3 px-4 py-2 lg:px-5">
         <button
           type="button"
           onClick={openDashboard}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left transition hover:opacity-80"
+          className="group flex min-w-0 items-center gap-3 rounded-xl px-2 py-1.5 text-left transition hover:bg-slate-50"
           aria-label="Open dashboard"
         >
           <Image
@@ -1210,16 +1211,28 @@ export default function ProjectsWorkspace() {
             alt="Urovo Projects"
             width={44}
             height={44}
-            className="h-11 w-11 rounded-xl object-cover"
+            className="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-200 transition group-hover:ring-slate-300"
             priority
           />
           <div className="min-w-0">
-            <div className="text-lg font-semibold tracking-tight text-slate-950">
+            <div className="truncate text-base font-semibold tracking-tight text-slate-950">
               Urovo Projects
+            </div>
+            <div className="truncate text-xs font-medium text-slate-500">
+              {viewMode === "dashboard"
+                ? "Dashboard"
+                : selectedProject?.project_name || "Project workspace"}
             </div>
           </div>
         </button>
-        <label className="relative hidden w-full max-w-md md:block">
+
+        <div className="hidden h-9 shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 lg:flex">
+          {viewMode === "dashboard"
+            ? dashboardModeLabel(dashboardMode)
+            : projectModeLabel(projectMode)}
+        </div>
+
+        <label className="relative ml-auto hidden w-full max-w-lg md:block">
           <span className="sr-only">
             {viewMode === "dashboard"
               ? dashboardMode === "requirements"
@@ -1234,7 +1247,7 @@ export default function ProjectsWorkspace() {
           <input
             value={globalQuery}
             onChange={(event) => updateGlobalQuery(event.target.value)}
-            className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-sm"
             placeholder={
               viewMode === "dashboard"
                 ? dashboardMode === "requirements"
@@ -1248,23 +1261,25 @@ export default function ProjectsWorkspace() {
             }
           />
         </label>
-        <button
-          onClick={() =>
-            projectMode === "overview"
-              ? setShowNewOverviewRequirement(true)
+        {viewMode === "project" && selectedFolder ? (
+          <button
+            onClick={() =>
+              projectMode === "overview"
+                ? setShowNewOverviewRequirement(true)
+                : projectMode === "requirements"
+                ? setShowNewRequirement(true)
+                : setShowNewTicket(true)
+            }
+            className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
+          >
+            {projectMode === "overview"
+              ? "New Demand"
               : projectMode === "requirements"
-              ? setShowNewRequirement(true)
-              : setShowNewTicket(true)
-          }
-          disabled={viewMode !== "project" || !selectedFolder}
-          className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {projectMode === "overview"
-            ? "New Demand"
-            : projectMode === "requirements"
-              ? "New Requirement"
-              : "New Ticket"}
-        </button>
+                ? "New Requirement"
+                : "New Ticket"}
+          </button>
+        ) : null}
+        </div>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
