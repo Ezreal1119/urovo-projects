@@ -1674,7 +1674,7 @@ function ProjectHeader({
             <h1 className="text-2xl font-semibold tracking-tight">
               {project.project_name}
             </h1>
-            <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
               {project.sales || "Unknown"}
             </span>
           </div>
@@ -3500,7 +3500,7 @@ function OverviewRequirementForm({
                   requirementDeleteMode ? "pr-5" : ""
                 }`}
               >
-                {formatRequirementLabel(requirementId, requirements)}
+                {requirementId}
                 {requirementDeleteMode ? (
                   <button
                     type="button"
@@ -3821,29 +3821,26 @@ function RequirementForm({
         </div>
         {draft.related_tickets.length > 0 ? (
           <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-            {draft.related_tickets.map((ticketId) => {
-              const ticket = tickets.find((current) => current.id === ticketId);
-              return (
-                <span
-                  key={ticketId}
-                  className={`relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 ${
-                    ticketDeleteMode ? "pr-5" : ""
-                  }`}
-                >
-                  [{ticketId}]: {ticket?.title ?? "Ticket not found"}
-                  {ticketDeleteMode ? (
-                    <button
-                      type="button"
-                      onClick={() => removeRelatedTicket(ticketId)}
-                      className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
-                      aria-label={`Remove ${ticketId}`}
-                    >
-                      x
-                    </button>
-                  ) : null}
-                </span>
-              );
-            })}
+            {draft.related_tickets.map((ticketId) => (
+              <span
+                key={ticketId}
+                className={`relative inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 ${
+                  ticketDeleteMode ? "pr-5" : ""
+                }`}
+              >
+                {ticketId}
+                {ticketDeleteMode ? (
+                  <button
+                    type="button"
+                    onClick={() => removeRelatedTicket(ticketId)}
+                    className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
+                    aria-label={`Remove ${ticketId}`}
+                  >
+                    x
+                  </button>
+                ) : null}
+              </span>
+            ))}
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-slate-200 p-3 text-sm text-slate-500">
@@ -4251,7 +4248,7 @@ function LinkedRequirementChips({
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="space-y-2">
       {requirementIds.map((requirementId) => {
         const requirement = requirements.find(
           (current) => current.id === requirementId,
@@ -4260,9 +4257,9 @@ function LinkedRequirementChips({
           return (
             <span
               key={requirementId}
-              className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-medium text-slate-400"
+              className="block w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-400"
             >
-              {requirementId}
+              [{requirementId}]: Requirement not found
             </span>
           );
         }
@@ -4275,10 +4272,17 @@ function LinkedRequirementChips({
               event.stopPropagation();
               onOpenRequirement(requirementId);
             }}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            className={`w-full rounded-lg border px-3 py-2 text-left transition ${linkedRequirementRowStyle(
+              requirement,
+            )}`}
             title={requirement.title}
           >
-            {formatRequirementLabel(requirementId, requirements)}
+            <div className="flex items-start justify-between gap-3">
+              <div className="line-clamp-2 text-sm font-semibold">
+                {formatRequirementLabel(requirementId, requirements)}
+              </div>
+              <RequirementStatusBadge status={requirement.status} />
+            </div>
           </button>
         );
       })}
@@ -4292,6 +4296,22 @@ function formatRequirementLabel(
 ) {
   const requirement = requirements.find((current) => current.id === requirementId);
   return requirement ? `[${requirementId}]: ${requirement.title}` : requirementId;
+}
+
+function linkedRequirementRowStyle(requirement: Requirement | undefined) {
+  if (!requirement) {
+    return "border-slate-200 bg-slate-50 text-slate-400";
+  }
+  if (requirement.status === "pending") {
+    return "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-300 hover:bg-slate-100";
+  }
+  if (requirement.status === "in_progress") {
+    return "border-blue-200 bg-blue-50 text-blue-900 hover:border-blue-300 hover:bg-blue-100";
+  }
+  if (requirement.status === "testing") {
+    return "border-violet-200 bg-violet-50 text-violet-900 hover:border-violet-300 hover:bg-violet-100";
+  }
+  return "border-emerald-200 bg-emerald-50 text-emerald-900 hover:border-emerald-300 hover:bg-emerald-100";
 }
 
 function relatedTicketRowStyle(ticket: Ticket | undefined) {
