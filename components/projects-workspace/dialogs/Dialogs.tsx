@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import type { ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
 import { emptyProjectJsonDraft, projectJsonDraftsEqual } from "../drafts";
-import { copyTextToClipboard, downloadSummaryMarkdownAsPng } from "../summary";
+import { copyTextToClipboard, downloadSummaryMarkdownAsPng, projectSummaryPngFilename } from "../summary";
 import { todayDate } from "../formatters";
 import { Field, Overlay } from "../ui";
 
@@ -334,9 +334,11 @@ export function ProjectJsonResultDialog({
 }
 
 export function ProjectSummaryDialog({
+  projectName,
   summary,
   onClose,
 }: {
+  projectName: string;
   summary: string;
   onClose: () => void;
 }) {
@@ -364,7 +366,7 @@ export function ProjectSummaryDialog({
     setDownloadBlocked(false);
     const didDownload = downloadSummaryMarkdownAsPng(
       summary,
-      "project-summary.png",
+      projectSummaryPngFilename(projectName),
     );
     if (!didDownload) {
       setDownloadBlocked(true);

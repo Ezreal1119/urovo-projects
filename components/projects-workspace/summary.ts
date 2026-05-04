@@ -1,4 +1,5 @@
 import type { Overview, ProjectInfo, Requirement, Ticket, TicketPriority, TimelineEvent } from "@/lib/types";
+import { APP_TIME_ZONE } from "@/lib/time";
 import { eventRoleLabels, priorityLabels, requirementStatusLabels, statusLabels } from "./labels";
 import { formatDateOnly } from "./formatters";
 
@@ -158,6 +159,37 @@ export function downloadSummaryMarkdownAsPng(markdown: string, filename: string)
   } catch {
     return false;
   }
+}
+
+export function projectSummaryPngFilename(projectName: string, now = new Date()) {
+  const safeProjectName =
+    sanitizeFilenamePart(projectName).replace(/\s+/g, " ").trim() || "Project";
+  return `${safeProjectName} (${formatFilenameDateTime(now)}).png`;
+}
+
+function sanitizeFilenamePart(value: string) {
+  return value
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/[\u0000-\u001f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatFilenameDateTime(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day} ${values.hour}-${values.minute}-${values.second}`;
 }
 
 export type SummaryDrawSegment = {

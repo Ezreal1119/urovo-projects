@@ -1526,6 +1526,7 @@ export default function ProjectsWorkspace() {
 
       {generatedProjectSummary ? (
         <ProjectSummaryDialog
+          projectName={selectedProject?.project_name ?? "Project"}
           summary={generatedProjectSummary}
           onClose={() => setGeneratedProjectSummary("")}
         />
