@@ -3586,6 +3586,10 @@ function GenerateReportDialog({
             <p className="mt-1 text-sm text-slate-500">
               Select an inclusive date range for dashboard activity.
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Date ranges of 5 days or longer use a general progress summary
+              format.
+            </p>
           </div>
           <button
             type="button"
@@ -3893,6 +3897,7 @@ function RequirementDrawer({
             submitLabel="Save changes"
             showSubmitButton={false}
             onDirtyChange={onDirtyChange}
+            onRelatedTicketsChange={saveRequirement}
             onSubmit={saveRequirement}
           />
           <ReferenceManager
@@ -4972,6 +4977,7 @@ function OverviewRequirementDrawer({
             submitLabel="Save changes"
             showSubmitButton={false}
             onDirtyChange={onDirtyChange}
+            onLinkedRequirementsChange={saveRequirement}
             onSubmit={saveRequirement}
           />
 
@@ -5148,6 +5154,7 @@ function OverviewRequirementForm({
   formId,
   showSubmitButton = true,
   onDirtyChange,
+  onLinkedRequirementsChange,
   onSubmit,
 }: {
   initial: OverviewRequirementDraft;
@@ -5158,6 +5165,7 @@ function OverviewRequirementForm({
   formId?: string;
   showSubmitButton?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onLinkedRequirementsChange?: (draft: OverviewRequirementDraft) => Promise<void>;
   onSubmit: (draft: OverviewRequirementDraft) => void | Promise<void>;
 }) {
   const [draft, setDraft] = useState<OverviewRequirementDraft>(initial);
@@ -5187,18 +5195,28 @@ function OverviewRequirementForm({
     onDirtyChange?.(!overviewRequirementDraftsEqual(nextDraft, baseline));
   }
 
-  function addLinkedRequirement(requirementId: string) {
+  async function saveLinkedRequirements(nextDraft: OverviewRequirementDraft) {
+    updateDraft(nextDraft);
+    if (!onLinkedRequirementsChange) {
+      return;
+    }
+    await onLinkedRequirementsChange(nextDraft);
+    setBaseline(nextDraft);
+    onDirtyChange?.(false);
+  }
+
+  async function addLinkedRequirement(requirementId: string) {
     if (draft.linked_requirements.includes(requirementId)) {
       return;
     }
-    updateDraft({
+    await saveLinkedRequirements({
       ...draft,
       linked_requirements: [...draft.linked_requirements, requirementId],
     });
   }
 
-  function removeLinkedRequirement(requirementId: string) {
-    updateDraft({
+  async function removeLinkedRequirement(requirementId: string) {
+    await saveLinkedRequirements({
       ...draft,
       linked_requirements: draft.linked_requirements.filter(
         (current) => current !== requirementId,
@@ -5256,6 +5274,7 @@ function OverviewRequirementForm({
             <button
               type="button"
               onClick={() => setRequirementPickerOpen(true)}
+              disabled={saving}
               className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Add
@@ -5283,7 +5302,8 @@ function OverviewRequirementForm({
                 {requirementDeleteMode ? (
                   <button
                     type="button"
-                    onClick={() => removeLinkedRequirement(requirementId)}
+                    onClick={() => void removeLinkedRequirement(requirementId)}
+                    disabled={saving}
                     className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
                     aria-label={`Remove ${requirementId}`}
                   >
@@ -5338,11 +5358,11 @@ function OverviewRequirementForm({
                     key={requirement.id}
                     type="button"
                     onClick={() => {
-                      addLinkedRequirement(requirement.id);
+                      void addLinkedRequirement(requirement.id);
                       setRequirementPickerOpen(false);
                       setRequirementQuery("");
                     }}
-                    disabled={selected}
+                    disabled={selected || saving}
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selected
                         ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
@@ -5567,6 +5587,7 @@ function RequirementForm({
   formId,
   showSubmitButton = true,
   onDirtyChange,
+  onRelatedTicketsChange,
   onSubmit,
 }: {
   initial: RequirementDraft;
@@ -5576,6 +5597,7 @@ function RequirementForm({
   formId?: string;
   showSubmitButton?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onRelatedTicketsChange?: (draft: RequirementDraft) => Promise<void>;
   onSubmit: (draft: RequirementDraft) => void | Promise<void>;
 }) {
   const [draft, setDraft] = useState<RequirementDraft>(initial);
@@ -5606,18 +5628,28 @@ function RequirementForm({
     onDirtyChange?.(!requirementDraftsEqual(nextDraft, baseline));
   }
 
-  function addRelatedTicket(ticketId: string) {
+  async function saveRelatedTickets(nextDraft: RequirementDraft) {
+    updateDraft(nextDraft);
+    if (!onRelatedTicketsChange) {
+      return;
+    }
+    await onRelatedTicketsChange(nextDraft);
+    setBaseline(nextDraft);
+    onDirtyChange?.(false);
+  }
+
+  async function addRelatedTicket(ticketId: string) {
     if (draft.related_tickets.includes(ticketId)) {
       return;
     }
-    updateDraft({
+    await saveRelatedTickets({
       ...draft,
       related_tickets: [...draft.related_tickets, ticketId],
     });
   }
 
-  function removeRelatedTicket(ticketId: string) {
-    updateDraft({
+  async function removeRelatedTicket(ticketId: string) {
+    await saveRelatedTickets({
       ...draft,
       related_tickets: draft.related_tickets.filter(
         (current) => current !== ticketId,
@@ -5682,6 +5714,7 @@ function RequirementForm({
             <button
               type="button"
               onClick={() => setTicketPickerOpen(true)}
+              disabled={saving}
               className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
             >
               Add
@@ -5709,7 +5742,8 @@ function RequirementForm({
                 {ticketDeleteMode ? (
                   <button
                     type="button"
-                    onClick={() => removeRelatedTicket(ticketId)}
+                    onClick={() => void removeRelatedTicket(ticketId)}
+                    disabled={saving}
                     className="absolute -right-1 -top-1 grid h-4 w-4 place-items-center rounded-full bg-red-600 text-[10px] font-semibold leading-none text-white hover:bg-red-700"
                     aria-label={`Remove ${ticketId}`}
                   >
@@ -5752,11 +5786,11 @@ function RequirementForm({
                     key={ticket.id}
                     type="button"
                     onClick={() => {
-                      addRelatedTicket(ticket.id);
+                      void addRelatedTicket(ticket.id);
                       setTicketPickerOpen(false);
                       setTicketQuery("");
                     }}
-                    disabled={selected}
+                    disabled={selected || saving}
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selected
                         ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
