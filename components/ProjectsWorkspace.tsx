@@ -169,6 +169,24 @@ type ReferenceBrowseEntry = {
   modified_at?: string;
 };
 
+type ReportGenerateDraft = {
+  startDate: string;
+  endDate: string;
+};
+
+type ReportGenerateResponse =
+  | {
+      status: "no_data";
+      ticketCount: 0;
+      requirementCount: 0;
+    }
+  | {
+      status: "sent";
+      report: string;
+      ticketCount: number;
+      requirementCount: number;
+    };
+
 const TICKETS_PER_PAGE = 10;
 const RECENT_PROJECTS_KEY = "urovo-projects:recent-projects";
 const MAX_ASSET_BYTES = 100 * 1024 * 1024;
@@ -295,6 +313,7 @@ export default function ProjectsWorkspace() {
     useState(false);
   const [showProjectJsonGenerator, setShowProjectJsonGenerator] =
     useState(false);
+  const [showGenerateReport, setShowGenerateReport] = useState(false);
   const [generatedProjectJson, setGeneratedProjectJson] = useState("");
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
@@ -740,6 +759,17 @@ export default function ProjectsWorkspace() {
 
   function openDashboardRequirement(item: DashboardRequirement) {
     void loadProject(item.folder, { requirementId: item.requirement.id });
+  }
+
+  async function generateDashboardReport(draft: ReportGenerateDraft) {
+    const result = await api<ReportGenerateResponse>("/api/reports/generate", {
+      method: "POST",
+      body: JSON.stringify(draft),
+    });
+    if (result.status === "sent") {
+      setToast("Report sent to email.");
+    }
+    return result;
   }
 
   useEffect(() => {
@@ -1358,6 +1388,14 @@ export default function ProjectsWorkspace() {
                   ? "New Requirement"
                   : "New Ticket"}
             </button>
+          ) : viewMode === "dashboard" ? (
+            <button
+              type="button"
+              onClick={() => setShowGenerateReport(true)}
+              className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
+            >
+              Generate Report
+            </button>
           ) : null}
         </div>
       </header>
@@ -1705,6 +1743,13 @@ export default function ProjectsWorkspace() {
         <ProjectJsonGeneratorDialog
           onClose={() => setShowProjectJsonGenerator(false)}
           onGenerate={generateProjectJson}
+        />
+      ) : null}
+
+      {showGenerateReport ? (
+        <GenerateReportDialog
+          onClose={() => setShowGenerateReport(false)}
+          onGenerate={generateDashboardReport}
         />
       ) : null}
 
@@ -3482,6 +3527,132 @@ function ProjectJsonResultDialog({
               ? "Clipboard access blocked."
               : " "}
         </div>
+      </div>
+    </Overlay>
+  );
+}
+
+function GenerateReportDialog({
+  onClose,
+  onGenerate,
+}: {
+  onClose: () => void;
+  onGenerate: (draft: ReportGenerateDraft) => Promise<ReportGenerateResponse>;
+}) {
+  const today = todayDate();
+  const [draft, setDraft] = useState<ReportGenerateDraft>({
+    startDate: today,
+    endDate: today,
+  });
+  const [generating, setGenerating] = useState(false);
+  const [result, setResult] = useState<ReportGenerateResponse | null>(null);
+  const [submitError, setSubmitError] = useState("");
+  const dateOrderError =
+    draft.startDate && draft.endDate && draft.startDate > draft.endDate
+      ? "Start date must be before or equal to end date."
+      : "";
+  const canGenerate =
+    Boolean(draft.startDate && draft.endDate) && !dateOrderError && !generating;
+
+  function updateDraft(nextDraft: ReportGenerateDraft) {
+    setDraft(nextDraft);
+    setResult(null);
+    setSubmitError("");
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canGenerate) {
+      return;
+    }
+    setGenerating(true);
+    setSubmitError("");
+    setResult(null);
+    try {
+      setResult(await onGenerate(draft));
+    } catch (requestError) {
+      setSubmitError((requestError as Error).message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">Generate Report</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Select an inclusive date range for dashboard activity.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={generating}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Close
+          </button>
+        </div>
+
+        <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Starting date">
+              <input
+                type="date"
+                value={draft.startDate}
+                onChange={(event) =>
+                  updateDraft({ ...draft, startDate: event.target.value })
+                }
+                className="form-input"
+                required
+              />
+            </Field>
+            <Field label="Ending date">
+              <input
+                type="date"
+                value={draft.endDate}
+                onChange={(event) =>
+                  updateDraft({ ...draft, endDate: event.target.value })
+                }
+                className="form-input"
+                required
+              />
+            </Field>
+          </div>
+
+          <div className="min-h-6 text-sm font-medium" aria-live="polite">
+            {dateOrderError ? (
+              <span className="text-red-700">{dateOrderError}</span>
+            ) : submitError ? (
+              <span className="text-red-700">{submitError}</span>
+            ) : result?.status === "no_data" ? (
+              <span className="text-amber-700">
+                No qualifying ticket or requirement activity was found. No email
+                was sent.
+              </span>
+            ) : result?.status === "sent" ? (
+              <span className="text-emerald-700">
+                Report sent. Included {result.ticketCount} tickets and{" "}
+                {result.requirementCount} requirements.
+              </span>
+            ) : (
+              <span className="text-slate-400"> </span>
+            )}
+          </div>
+
+          <div className="flex justify-end border-t border-slate-100 pt-4">
+            <button
+              type="submit"
+              disabled={!canGenerate}
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generating ? "Generating..." : "Generate"}
+            </button>
+          </div>
+        </form>
       </div>
     </Overlay>
   );
