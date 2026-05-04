@@ -1,4 +1,5 @@
 import { cloudinaryAssetPrefix, deleteAssetsByPrefix } from "@/lib/cloudinary-assets";
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   projectKeyFromSegments,
   readRequirements,
@@ -27,6 +28,14 @@ export async function PUT(request: Request, context: Context) {
     const updated = updateTicketPayload(tickets[index], input);
     const nextTickets = tickets.toSpliced(index, 1, updated).sort(sortTickets);
     await writeTickets(key, nextTickets);
+    await appendChangeLogs(key, [
+      {
+        entityType: "ticket",
+        ...visibleEntityId(updated),
+        action: "ticket_updated",
+        content: ticketContent(updated),
+      },
+    ]);
     return Response.json({ ticket: updated });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
@@ -66,8 +75,22 @@ export async function DELETE(_request: Request, context: Context) {
       cloudinaryAssetPrefix(country, project, "tickets", ticket?.uuid || ticketId),
     );
     await writeTickets(key, nextTickets);
+    if (ticket) {
+      await appendChangeLogs(key, [
+        {
+          entityType: "ticket",
+          ...visibleEntityId(ticket),
+          action: "ticket_deleted",
+          content: `Deleted ticket [${ticket.id}]: ${ticket.title}`,
+        },
+      ]);
+    }
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
+}
+
+function ticketContent(ticket: { title: string; summary: string; next_action: string }) {
+  return [ticket.title, ticket.summary, ticket.next_action].filter(Boolean).join(" ");
 }

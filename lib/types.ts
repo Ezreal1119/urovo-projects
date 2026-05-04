@@ -111,3 +111,44 @@ export type Overview = {
 
 export type OverviewInput = Partial<Omit<Overview, "requirements">>;
 export type OverviewRequirementInput = Partial<Omit<OverviewRequirement, "id" | "uuid" | "created_at">>;
+
+export type ChangeLogEntityType = "demand" | "ticket" | "requirement" | "project";
+
+export type ChangeLogAction =
+  | "demand_created"
+  | "demand_updated"
+  | "demand_deleted"
+  | "demand_linked_requirement_added"
+  | "demand_linked_requirement_removed"
+  | "ticket_created"
+  | "ticket_updated"
+  | "ticket_deleted"
+  | "ticket_event_added"
+  | "ticket_event_updated"
+  | "ticket_event_deleted"
+  | "requirement_created"
+  | "requirement_updated"
+  | "requirement_deleted"
+  | "requirement_linked_ticket_added"
+  | "requirement_linked_ticket_removed"
+  | "requirement_timeline_added"
+  | "requirement_timeline_updated"
+  | "requirement_timeline_deleted";
+
+export type ChangeLogEntry = {
+  id: string;
+  time: string;
+  project_id: string;
+  country: string;
+  project_name: string;
+  entity_type: ChangeLogEntityType;
+  entity_id: string;
+  entity_display_id: string;
+  action: ChangeLogAction;
+  content: string;
+};
+
+export type ChangeLogFile = {
+  version: 1;
+  logs: ChangeLogEntry[];
+};

@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   createTicketPayload,
   projectKeyFromSegments,
@@ -35,8 +36,20 @@ export async function POST(request: Request, context: Context) {
     const ticket = createTicketPayload(input, tickets, projectInfo.project_name);
     const nextTickets = [ticket, ...tickets].sort(sortTickets);
     await writeTickets(key, nextTickets);
+    await appendChangeLogs(key, [
+      {
+        entityType: "ticket",
+        ...visibleEntityId(ticket),
+        action: "ticket_created",
+        content: ticketContent(ticket),
+      },
+    ]);
     return Response.json({ ticket }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
+}
+
+function ticketContent(ticket: { title: string; summary: string; next_action: string }) {
+  return [ticket.title, ticket.summary, ticket.next_action].filter(Boolean).join(" ");
 }

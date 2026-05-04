@@ -15,6 +15,10 @@ export function beijingNowIsoString() {
   return datePartsToIso(beijingDateTimeFormatter.formatToParts(new Date()));
 }
 
+export function beijingNowLogTime() {
+  return beijingNowIsoString().replace("T", " ");
+}
+
 export function beijingTodayDate() {
   return beijingNowIsoString().split("T")[0];
 }

@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   projectKeyFromSegments,
   readRequirements,
@@ -38,6 +39,14 @@ export async function PUT(request: Request, context: Context) {
     });
     const nextRequirements = requirements.toSpliced(requirementIndex, 1, requirement).sort(sortRequirements);
     await writeRequirements(key, nextRequirements);
+    await appendChangeLogs(key, [
+      {
+        entityType: "requirement",
+        ...visibleEntityId(requirement),
+        action: "requirement_timeline_updated",
+        content: timelineItem.remark,
+      },
+    ]);
     return Response.json({ timelineItem, requirement });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
@@ -60,11 +69,20 @@ export async function DELETE(_request: Request, context: Context) {
       return Response.json({ error: "Timeline update not found." }, { status: 404 });
     }
 
+    const deletedTimelineItem = timeline[index];
     const requirement = updateRequirementPayload(requirements[requirementIndex], {
       timeline: timeline.toSpliced(index, 1),
     });
     const nextRequirements = requirements.toSpliced(requirementIndex, 1, requirement).sort(sortRequirements);
     await writeRequirements(key, nextRequirements);
+    await appendChangeLogs(key, [
+      {
+        entityType: "requirement",
+        ...visibleEntityId(requirement),
+        action: "requirement_timeline_deleted",
+        content: deletedTimelineItem.remark,
+      },
+    ]);
     return Response.json({ requirement });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });

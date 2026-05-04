@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   createRequirementPayload,
   projectKeyFromSegments,
@@ -30,8 +31,20 @@ export async function POST(request: Request, context: Context) {
     const requirement = createRequirementPayload(input, requirements);
     const nextRequirements = [requirement, ...requirements].sort(sortRequirements);
     await writeRequirements(key, nextRequirements);
+    await appendChangeLogs(key, [
+      {
+        entityType: "requirement",
+        ...visibleEntityId(requirement),
+        action: "requirement_created",
+        content: requirementContent(requirement),
+      },
+    ]);
     return Response.json({ requirement }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
+}
+
+function requirementContent(requirement: { title: string; details: string }) {
+  return [requirement.title, requirement.details].filter(Boolean).join(" ");
 }

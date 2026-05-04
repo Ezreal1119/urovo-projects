@@ -1,4 +1,5 @@
 import { cloudinaryAssetPrefix, deleteAssetsByPrefix } from "@/lib/cloudinary-assets";
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   projectKeyFromSegments,
   readOverview,
@@ -24,9 +25,34 @@ export async function PUT(request: Request, context: Context) {
       return Response.json({ error: "Requirement not found." }, { status: 404 });
     }
 
-    const updated = updateRequirementPayload(requirements[index], input);
+    const existingRequirement = requirements[index];
+    const updated = updateRequirementPayload(existingRequirement, input);
     const nextRequirements = requirements.toSpliced(index, 1, updated).sort(sortRequirements);
     await writeRequirements(key, nextRequirements);
+    await appendChangeLogs(key, [
+      {
+        entityType: "requirement",
+        ...visibleEntityId(updated),
+        action: "requirement_updated",
+        content: requirementContent(updated),
+      },
+      ...diffTextList(existingRequirement.related_tickets, updated.related_tickets).added.map(
+        (ticketId) => ({
+          entityType: "requirement" as const,
+          ...visibleEntityId(updated),
+          action: "requirement_linked_ticket_added" as const,
+          content: `Linked ticket ${ticketId}.`,
+        }),
+      ),
+      ...diffTextList(existingRequirement.related_tickets, updated.related_tickets).removed.map(
+        (ticketId) => ({
+          entityType: "requirement" as const,
+          ...visibleEntityId(updated),
+          action: "requirement_linked_ticket_removed" as const,
+          content: `Removed linked ticket ${ticketId}.`,
+        }),
+      ),
+    ]);
     return Response.json({ requirement: updated });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
@@ -67,8 +93,29 @@ export async function DELETE(_request: Request, context: Context) {
       cloudinaryAssetPrefix(country, project, "requirements", requirement?.uuid || requirementId),
     );
     await writeRequirements(key, nextRequirements);
+    if (requirement) {
+      await appendChangeLogs(key, [
+        {
+          entityType: "requirement",
+          ...visibleEntityId(requirement),
+          action: "requirement_deleted",
+          content: `Deleted requirement [${requirement.id}]: ${requirement.title}`,
+        },
+      ]);
+    }
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
+}
+
+function requirementContent(requirement: { title: string; details: string }) {
+  return [requirement.title, requirement.details].filter(Boolean).join(" ");
+}
+
+function diffTextList(before: string[], after: string[]) {
+  return {
+    added: after.filter((item) => !before.includes(item)),
+    removed: before.filter((item) => !after.includes(item)),
+  };
 }

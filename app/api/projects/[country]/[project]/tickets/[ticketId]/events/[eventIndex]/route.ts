@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   projectKeyFromSegments,
   readTickets,
@@ -38,6 +39,14 @@ export async function PUT(request: Request, context: Context) {
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
     await writeTickets(key, nextTickets);
+    await appendChangeLogs(key, [
+      {
+        entityType: "ticket",
+        ...visibleEntityId(ticket),
+        action: "ticket_event_updated",
+        content: event.content,
+      },
+    ]);
     return Response.json({ event, ticket });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
@@ -60,6 +69,7 @@ export async function DELETE(_request: Request, context: Context) {
       return Response.json({ error: "Event not found." }, { status: 404 });
     }
 
+    const deletedEvent = events[index];
     const ticket = {
       ...tickets[ticketIndex],
       events: events.toSpliced(index, 1),
@@ -67,6 +77,14 @@ export async function DELETE(_request: Request, context: Context) {
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
     await writeTickets(key, nextTickets);
+    await appendChangeLogs(key, [
+      {
+        entityType: "ticket",
+        ...visibleEntityId(ticket),
+        action: "ticket_event_deleted",
+        content: deletedEvent.content,
+      },
+    ]);
     return Response.json({ ticket });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });

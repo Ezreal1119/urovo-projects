@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   createOverviewRequirementPayload,
   projectKeyFromSegments,
@@ -22,8 +23,22 @@ export async function POST(request: Request, context: Context) {
       requirements: [requirement, ...overview.requirements],
     };
     await writeOverview(key, nextOverview);
+    await appendChangeLogs(key, [
+      {
+        entityType: "demand",
+        ...visibleEntityId(requirement),
+        action: "demand_created",
+        content: demandContent(requirement),
+      },
+    ]);
     return Response.json({ requirement }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
+}
+
+function demandContent(requirement: { product: string; simple_requirements: string[]; remark: string }) {
+  return [requirement.product, ...requirement.simple_requirements, requirement.remark]
+    .filter(Boolean)
+    .join(" ");
 }

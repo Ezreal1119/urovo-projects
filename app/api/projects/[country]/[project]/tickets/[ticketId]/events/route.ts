@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   createEventPayload,
   projectKeyFromSegments,
@@ -32,6 +33,14 @@ export async function POST(request: Request, context: Context) {
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
     await writeTickets(key, nextTickets);
+    await appendChangeLogs(key, [
+      {
+        entityType: "ticket",
+        ...visibleEntityId(ticket),
+        action: "ticket_event_added",
+        content: event.content,
+      },
+    ]);
     return Response.json({ event, ticket }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });

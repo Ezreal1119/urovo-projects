@@ -1,3 +1,4 @@
+import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   createRequirementTimelinePayload,
   projectKeyFromSegments,
@@ -30,6 +31,14 @@ export async function POST(request: Request, context: Context) {
     });
     const nextRequirements = requirements.toSpliced(index, 1, requirement).sort(sortRequirements);
     await writeRequirements(key, nextRequirements);
+    await appendChangeLogs(key, [
+      {
+        entityType: "requirement",
+        ...visibleEntityId(requirement),
+        action: "requirement_timeline_added",
+        content: timelineItem.remark,
+      },
+    ]);
     return Response.json({ timelineItem, requirement }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
