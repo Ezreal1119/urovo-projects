@@ -315,6 +315,7 @@ export default function ProjectsWorkspace() {
     useState(false);
   const [showGenerateReport, setShowGenerateReport] = useState(false);
   const [generatedProjectJson, setGeneratedProjectJson] = useState("");
+  const [generatedProjectSummary, setGeneratedProjectSummary] = useState("");
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
   const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
@@ -1060,6 +1061,15 @@ export default function ProjectsWorkspace() {
     setShowProjectJsonGenerator(false);
   }
 
+  function generateProjectSummary() {
+    if (!selectedProject) {
+      return;
+    }
+    setGeneratedProjectSummary(
+      buildProjectSummary(selectedProject, overview, requirements, tickets),
+    );
+  }
+
   async function updateOverviewRequirement(
     requirementId: string,
     draft: OverviewRequirementDraft,
@@ -1372,22 +1382,31 @@ export default function ProjectsWorkspace() {
             />
           </label>
           {viewMode === "project" && selectedFolder ? (
-            <button
-              onClick={() =>
-                projectMode === "overview"
-                  ? setShowNewOverviewRequirement(true)
+            <div className="grid shrink-0 grid-cols-1 gap-2 sm:flex sm:items-center">
+              <button
+                onClick={() =>
+                  projectMode === "overview"
+                    ? setShowNewOverviewRequirement(true)
+                    : projectMode === "requirements"
+                      ? setShowNewRequirement(true)
+                      : setShowNewTicket(true)
+                }
+                className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
+              >
+                {projectMode === "overview"
+                  ? "New Demand"
                   : projectMode === "requirements"
-                    ? setShowNewRequirement(true)
-                    : setShowNewTicket(true)
-              }
-              className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
-            >
-              {projectMode === "overview"
-                ? "New Demand"
-                : projectMode === "requirements"
-                  ? "New Requirement"
-                  : "New Ticket"}
-            </button>
+                    ? "New Requirement"
+                    : "New Ticket"}
+              </button>
+              <button
+                type="button"
+                onClick={generateProjectSummary}
+                className="h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+              >
+                Generate Summary
+              </button>
+            </div>
           ) : viewMode === "dashboard" ? (
             <button
               type="button"
@@ -1757,6 +1776,13 @@ export default function ProjectsWorkspace() {
         <ProjectJsonResultDialog
           json={generatedProjectJson}
           onClose={() => setGeneratedProjectJson("")}
+        />
+      ) : null}
+
+      {generatedProjectSummary ? (
+        <ProjectSummaryDialog
+          summary={generatedProjectSummary}
+          onClose={() => setGeneratedProjectSummary("")}
         />
       ) : null}
 
@@ -3508,6 +3534,91 @@ function ProjectJsonResultDialog({
           </div>
           <pre className="max-h-[50vh] overflow-auto bg-slate-950 p-4 text-sm leading-6 text-slate-50">
             <code>{json}</code>
+          </pre>
+        </div>
+
+        <div
+          className={`mt-3 min-h-5 text-sm font-medium transition ${
+            copied
+              ? "text-emerald-700"
+              : copyBlocked
+                ? "text-amber-700"
+                : "text-slate-400"
+          }`}
+          aria-live="polite"
+        >
+          {copied
+            ? "Copied to clipboard."
+            : copyBlocked
+              ? "Clipboard access blocked."
+              : " "}
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
+function ProjectSummaryDialog({
+  summary,
+  onClose,
+}: {
+  summary: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copyBlocked, setCopyBlocked] = useState(false);
+
+  async function copySummary() {
+    setCopyBlocked(false);
+    const didCopy = await copyTextToClipboard(summary);
+    if (!didCopy) {
+      setCopyBlocked(true);
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-3xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">Project Summary</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+
+        <div
+          className={`overflow-hidden rounded-lg border transition ${
+            copied
+              ? "border-emerald-300 ring-2 ring-emerald-100"
+              : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Summary
+            </span>
+            <button
+              type="button"
+              onClick={() => void copySummary()}
+              className={`grid h-8 w-8 place-items-center rounded-md border text-sm shadow-sm transition ${
+                copied
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-950"
+              }`}
+              aria-label={copied ? "Project summary copied" : "Copy project summary"}
+            >
+              {copied ? "✓" : "⧉"}
+            </button>
+          </div>
+          <pre className="max-h-[60vh] whitespace-pre-wrap overflow-auto bg-slate-950 p-4 text-sm leading-6 text-slate-50">
+            <code>{summary}</code>
           </pre>
         </div>
 
@@ -6768,6 +6879,124 @@ function eventDraftForApi(draft: EventDraft): EventDraft {
     ...draft,
     time: draft.time.includes("T") ? draft.time : `${draft.time}T00:00:00`,
   };
+}
+
+function buildProjectSummary(
+  project: ProjectInfo,
+  overview: Overview,
+  requirements: Requirement[],
+  tickets: Ticket[],
+) {
+  const sections: string[] = [];
+  const projectLines = [`# Project: ${project.project_name}`];
+  const relateds = [...overview.models, ...overview.others];
+
+  if (relateds.length > 0) {
+    projectLines.push("", `- Relateds: ${relateds.join(", ")}`);
+  }
+  if (overview.description) {
+    if (relateds.length === 0) {
+      projectLines.push("");
+    }
+    projectLines.push(`- Description: ${overview.description}`);
+  }
+  sections.push(projectLines.join("\n"));
+
+  if (overview.requirements.length > 0) {
+    const requirementMap = new Map(
+      requirements.map((requirement) => [requirement.id, requirement]),
+    );
+    const demandLines = ["## Demands"];
+
+    for (const demand of overview.requirements) {
+      demandLines.push("", `### ${demand.product}:`, "");
+      for (const simpleRequirement of demand.simple_requirements) {
+        demandLines.push(`- ${simpleRequirement}`);
+      }
+      for (const requirementId of demand.linked_requirements) {
+        const linkedRequirement = requirementMap.get(requirementId);
+        if (!linkedRequirement) {
+          continue;
+        }
+        demandLines.push(
+          `- ${stripBracketMetadata(linkedRequirement.title)}: ${
+            requirementStatusLabels[linkedRequirement.status]
+          }`,
+        );
+      }
+      if (demand.remark) {
+        demandLines.push(`- Remark: ${demand.remark}`);
+      }
+    }
+
+    sections.push(demandLines.join("\n"));
+  }
+
+  const activeTickets = tickets
+    .filter((ticket) => ticket.status !== "resolved")
+    .map((ticket, index) => ({ ticket, index }))
+    .sort((left, right) => {
+      const priorityDifference =
+        ticketSummaryPriorityRank[right.ticket.priority] -
+        ticketSummaryPriorityRank[left.ticket.priority];
+      return priorityDifference || left.index - right.index;
+    })
+    .map(({ ticket }) => ticket);
+  if (activeTickets.length > 0) {
+    const ticketLines = ["## Tickets"];
+
+    activeTickets.forEach((ticket, index) => {
+      if (index > 0) {
+        ticketLines.push("", "---");
+      }
+      ticketLines.push(
+        "",
+        `### ${index + 1}. ${stripBracketMetadata(ticket.title)}:`,
+        `  - Status: "${statusLabels[ticket.status]}"`,
+        `  - Priority: "${priorityLabels[ticket.priority]}"`,
+      );
+      const latestEvent = latestTicketEvent(ticket.events);
+      if (latestEvent) {
+        ticketLines.push(
+          "",
+          "```",
+          `Latest progress (${eventRoleLabels[latestEvent.role]}) - Time: ${formatDateTimeFull(
+            latestEvent.time,
+          )}`,
+          "",
+          "<-----Content Below----->",
+          "",
+          latestEvent.content,
+          "```",
+        );
+      }
+    });
+
+    sections.push(ticketLines.join("\n"));
+  }
+
+  return `${sections.join("\n\n---\n\n")}\n`;
+}
+
+function stripBracketMetadata(title: string) {
+  const stripped = title.replace(/\[[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+  return stripped || "Untitled";
+}
+
+const ticketSummaryPriorityRank: Record<TicketPriority, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  urgent: 3,
+};
+
+function latestTicketEvent(events: TimelineEvent[]) {
+  return events.reduce<TimelineEvent | null>((latest, event) => {
+    if (!latest || event.time.localeCompare(latest.time) > 0) {
+      return event;
+    }
+    return latest;
+  }, null);
 }
 
 function formatDate(value: string) {
