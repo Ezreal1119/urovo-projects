@@ -3875,7 +3875,7 @@ function TicketDrawer({
               disabled={saving}
               className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? "Saving..." : "Save"}
             </button>
             <button
               onClick={onClose}
@@ -3892,7 +3892,7 @@ function TicketDrawer({
             formId={formId}
             initial={ticketToDraft(ticket)}
             saving={saving}
-            submitLabel="Save changes"
+            submitLabel="Save"
             showNextAction={false}
             showSubmitButton={false}
             onDirtyChange={onDirtyChange}
@@ -4033,7 +4033,7 @@ function RequirementDrawer({
               disabled={saving}
               className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? "Saving..." : "Save"}
             </button>
             <button
               onClick={onClose}
@@ -4051,7 +4051,7 @@ function RequirementDrawer({
             initial={requirementToDraft(requirement)}
             tickets={tickets}
             saving={saving}
-            submitLabel="Save changes"
+            submitLabel="Save"
             showSubmitButton={false}
             onDirtyChange={onDirtyChange}
             onRelatedTicketsChange={saveRequirement}
@@ -4252,14 +4252,14 @@ function ReferenceManager({
             onClick={() => setShowPicker(true)}
             className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
           >
-            Add Reference
+            Add
           </button>
           <button
             type="button"
             onClick={() => setShowReferences(true)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950"
           >
-            View References
+            View
           </button>
         </div>
       </div>
@@ -4634,14 +4634,14 @@ function AssetManager({ assetApiPath }: { assetApiPath: string }) {
             onClick={() => setShowUpload(true)}
             className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
           >
-            Upload Asset
+            Upload
           </button>
           <button
             type="button"
             onClick={() => setShowAssets(true)}
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950"
           >
-            View Assets
+            View
           </button>
         </div>
       </div>
@@ -5112,7 +5112,7 @@ function OverviewRequirementDrawer({
               disabled={saving || products.length === 0}
               className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? "Saving..." : "Save"}
             </button>
             <button
               onClick={onClose}
@@ -5131,7 +5131,7 @@ function OverviewRequirementDrawer({
             products={products}
             requirements={requirements}
             saving={saving}
-            submitLabel="Save changes"
+            submitLabel="Save"
             showSubmitButton={false}
             onDirtyChange={onDirtyChange}
             onLinkedRequirementsChange={saveRequirement}
