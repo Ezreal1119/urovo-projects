@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import type { Overview, OverviewRequirement, ProjectInfo, Requirement } from "@/lib/types";
+import { GENERAL_OVERVIEW_PRODUCT, type Overview, type OverviewRequirement, type ProjectInfo, type Requirement } from "@/lib/types";
 import type { OverviewRequirementDraft, OverviewSettingsDraft, ProjectMode } from "../types";
 import { projectModeLabel } from "../labels";
 import { formatDate, formatDateTimeFull } from "../formatters";
@@ -74,6 +74,11 @@ export function OverviewWorkspace({
   onSelect: (requirementId: string) => void;
   onOpenRequirement: (requirementId: string) => void;
 }) {
+  const sortedRequirements = useMemo(
+    () => [...requirements].sort(sortOverviewDemandsForDisplay),
+    [requirements],
+  );
+
   return (
     <div className="mt-6 space-y-5">
       <OverviewSettingsPanel
@@ -94,7 +99,7 @@ export function OverviewWorkspace({
           </span>
         </div>
         <div className="space-y-3">
-          {requirements.map((requirement) => (
+          {sortedRequirements.map((requirement) => (
             <OverviewRequirementCard
               key={requirement.id}
               requirement={requirement}
@@ -118,6 +123,18 @@ export function OverviewWorkspace({
       </section>
     </div>
   );
+}
+
+function sortOverviewDemandsForDisplay(
+  left: OverviewRequirement,
+  right: OverviewRequirement,
+) {
+  const leftIsGeneral = left.product === GENERAL_OVERVIEW_PRODUCT;
+  const rightIsGeneral = right.product === GENERAL_OVERVIEW_PRODUCT;
+  if (leftIsGeneral !== rightIsGeneral) {
+    return leftIsGeneral ? -1 : 1;
+  }
+  return 0;
 }
 
 export function OverviewSettingsPanel({
