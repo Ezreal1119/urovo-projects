@@ -102,7 +102,7 @@ export default function ProjectsWorkspace() {
       return projects;
     }
     return projects.filter(({ folder, project }) =>
-      [folder, project.project_name, project.customer, project.country]
+      [folder, project.project_name, project.customer, project.country, project.sales]
         .join(" ")
         .toLowerCase()
         .includes(query),
