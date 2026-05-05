@@ -508,14 +508,10 @@ export default function ProjectsWorkspace() {
   }
 
   async function generateDashboardReport(draft: ReportGenerateDraft) {
-    const result = await api<ReportGenerateResponse>("/api/reports/generate", {
+    return api<ReportGenerateResponse>("/api/reports/generate", {
       method: "POST",
       body: JSON.stringify(draft),
     });
-    if (result.status === "sent") {
-      setToast("Report sent to email.");
-    }
-    return result;
   }
 
   useEffect(() => {

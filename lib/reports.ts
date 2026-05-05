@@ -18,7 +18,6 @@ const CHANGE_LOG_FILE = "CHANGE_LOG.json";
 const REPORT_PROMPT_FILE = "report_prompt.md";
 const QWEN_CHAT_COMPLETIONS_URL =
   "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-const REPORT_EMAIL_URL = "https://urovo-tech.patrick-shenzhen.org/api/contact";
 
 export type ReportDateRange = {
   startDate: string;
@@ -32,7 +31,7 @@ export type ReportResult =
       requirementCount: 0;
     }
   | {
-      status: "sent";
+      status: "generated";
       report: string;
       ticketCount: number;
       requirementCount: number;
@@ -68,7 +67,7 @@ export function validateReportDateRange(input: unknown): ReportDateRange {
   return { startDate, endDate };
 }
 
-export async function generateAndSendReport(range: ReportDateRange): Promise<ReportResult> {
+export async function generateReport(range: ReportDateRange): Promise<ReportResult> {
   const context = await buildReportContext(range);
   const ticketCount = context.projects.reduce(
     (total, project) => total + project.tickets.length,
@@ -85,9 +84,8 @@ export async function generateAndSendReport(range: ReportDateRange): Promise<Rep
 
   const prompt = await readReportPrompt();
   const report = await requestQwenReport(prompt, context);
-  await sendReportEmail(report);
 
-  return { status: "sent", report, ticketCount, requirementCount };
+  return { status: "generated", report, ticketCount, requirementCount };
 }
 
 async function buildReportContext(range: ReportDateRange): Promise<ReportContext> {
@@ -225,24 +223,6 @@ async function requestQwenReport(prompt: string, context: ReportContext) {
     throw new Error("Qwen returned an empty report.");
   }
   return report;
-}
-
-async function sendReportEmail(report: string) {
-  const response = await fetch(REPORT_EMAIL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      title: "AI-Chat-Recorder",
-      content: report,
-      email: "AI-REPORT@urovo.com",
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Report email request failed with status ${response.status}.`);
-  }
 }
 
 function compactReportContext(context: ReportContext) {

@@ -481,6 +481,8 @@ export function GenerateReportDialog({
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<ReportGenerateResponse | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [copyBlocked, setCopyBlocked] = useState(false);
   const dateOrderError =
     draft.startDate && draft.endDate && draft.startDate > draft.endDate
       ? "Start date must be before or equal to end date."
@@ -492,6 +494,8 @@ export function GenerateReportDialog({
     setDraft(nextDraft);
     setResult(null);
     setSubmitError("");
+    setCopied(false);
+    setCopyBlocked(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -502,6 +506,8 @@ export function GenerateReportDialog({
     setGenerating(true);
     setSubmitError("");
     setResult(null);
+    setCopied(false);
+    setCopyBlocked(false);
     try {
       setResult(await onGenerate(draft));
     } catch (requestError) {
@@ -511,9 +517,23 @@ export function GenerateReportDialog({
     }
   }
 
+  async function copyReport() {
+    if (result?.status !== "generated") {
+      return;
+    }
+    setCopyBlocked(false);
+    const didCopy = await copyTextToClipboard(result.report);
+    if (!didCopy) {
+      setCopyBlocked(true);
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
   return (
     <Overlay>
-      <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+      <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-center justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold">Generate Report</h2>
@@ -568,12 +588,11 @@ export function GenerateReportDialog({
               <span className="text-red-700">{submitError}</span>
             ) : result?.status === "no_data" ? (
               <span className="text-amber-700">
-                No qualifying ticket or requirement activity was found. No email
-                was sent.
+                No qualifying ticket or requirement activity was found.
               </span>
-            ) : result?.status === "sent" ? (
+            ) : result?.status === "generated" ? (
               <span className="text-emerald-700">
-                Report sent. Included {result.ticketCount} tickets and{" "}
+                Report generated. Included {result.ticketCount} tickets and{" "}
                 {result.requirementCount} requirements.
               </span>
             ) : (
@@ -591,6 +610,57 @@ export function GenerateReportDialog({
             </button>
           </div>
         </form>
+
+        {result?.status === "generated" ? (
+          <div className="mt-5">
+            <div
+              className={`overflow-hidden rounded-lg border transition ${
+                copied
+                  ? "border-emerald-300 ring-2 ring-emerald-100"
+                  : "border-slate-200"
+              }`}
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Report
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void copyReport()}
+                  className={`grid h-8 w-8 place-items-center rounded-md border text-sm shadow-sm transition ${
+                    copied
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-950"
+                  }`}
+                  aria-label={copied ? "Report copied" : "Copy report"}
+                  title="Copy report"
+                >
+                  {copied ? "✓" : "⧉"}
+                </button>
+              </div>
+              <pre className="max-h-[40vh] whitespace-pre-wrap overflow-auto bg-slate-950 p-4 text-sm leading-6 text-slate-50">
+                <code>{result.report}</code>
+              </pre>
+            </div>
+
+            <div
+              className={`mt-3 min-h-5 text-sm font-medium transition ${
+                copied
+                  ? "text-emerald-700"
+                  : copyBlocked
+                    ? "text-amber-700"
+                    : "text-slate-400"
+              }`}
+              aria-live="polite"
+            >
+              {copied
+                ? "Copied to clipboard."
+                : copyBlocked
+                  ? "Clipboard access blocked."
+                  : " "}
+            </div>
+          </div>
+        ) : null}
       </div>
     </Overlay>
   );

@@ -162,7 +162,7 @@ export type ReportGenerateResponse =
       requirementCount: 0;
     }
   | {
-      status: "sent";
+      status: "generated";
       report: string;
       ticketCount: number;
       requirementCount: number;
