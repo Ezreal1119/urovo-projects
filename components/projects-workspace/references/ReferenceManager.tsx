@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ProjectReference, ReferenceBrowseEntry } from "../types";
 import { api } from "../api-client";
 import { formatBytes, formatDateTimeFull, parentReferencePath } from "../formatters";
-import { EmptyState, Overlay } from "../ui";
+import { EmptyState, Overlay, Toast } from "../ui";
 
 export function ReferenceManager({
   browseApiPath,
@@ -17,6 +17,7 @@ export function ReferenceManager({
   const [showReferences, setShowReferences] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [referenceCountOverride, setReferenceCountOverride] = useState<number | null>(null);
+  const [toast, setToast] = useState("");
   const referenceCount = referenceCountOverride ?? initialCount;
 
   const refreshReferences = useCallback((nextCount?: number) => {
@@ -30,6 +31,11 @@ export function ReferenceManager({
     if (nextCount !== undefined) {
       setReferenceCountOverride(nextCount);
     }
+  }, []);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2400);
   }, []);
 
   return (
@@ -70,6 +76,7 @@ export function ReferenceManager({
           referenceApiPath={referenceApiPath}
           onClose={() => setShowPicker(false)}
           onChanged={refreshReferences}
+          onReferenceAdded={showToast}
         />
       ) : null}
 
@@ -81,6 +88,7 @@ export function ReferenceManager({
           onChanged={updateReferenceCount}
         />
       ) : null}
+      {toast ? <Toast message={toast} /> : null}
     </section>
   );
 }
@@ -90,18 +98,19 @@ export function ReferencePickerDialog({
   referenceApiPath,
   onClose,
   onChanged,
+  onReferenceAdded,
 }: {
   browseApiPath: string;
   referenceApiPath: string;
   onClose: () => void;
   onChanged: (nextCount?: number) => void;
+  onReferenceAdded: (message: string) => void;
 }) {
   const [currentPath, setCurrentPath] = useState("docs");
   const [entries, setEntries] = useState<ReferenceBrowseEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [missingDocs, setMissingDocs] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [addingPath, setAddingPath] = useState("");
 
   useEffect(() => {
@@ -141,14 +150,13 @@ export function ReferencePickerDialog({
   async function addReference(entry: ReferenceBrowseEntry) {
     setAddingPath(entry.path);
     setError("");
-    setSuccess("");
     try {
       const data = await api<{ references: ProjectReference[] }>(referenceApiPath, {
         method: "POST",
         body: JSON.stringify({ path: entry.path }),
       });
-      setSuccess(`${entry.name} added.`);
       onChanged(data.references.length);
+      onReferenceAdded(`${entry.name} added.`);
     } catch (addError) {
       setError((addError as Error).message);
     } finally {
@@ -177,11 +185,6 @@ export function ReferencePickerDialog({
           {error ? (
             <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
-            </div>
-          ) : null}
-          {success ? (
-            <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
-              {success}
             </div>
           ) : null}
 

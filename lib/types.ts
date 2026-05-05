@@ -10,6 +10,7 @@ export const PRIORITIES = ["low", "medium", "high", "urgent"] as const;
 
 export const EVENT_ROLES = ["customer", "support", "internal", "sales", "others"] as const;
 export const REQUIREMENT_STATUSES = ["pending", "in_progress", "testing", "finished"] as const;
+export const GENERAL_OVERVIEW_PRODUCT = "General";
 
 export type TicketStatus = (typeof STATUSES)[number];
 export type TicketPriority = (typeof PRIORITIES)[number];

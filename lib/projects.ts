@@ -4,6 +4,7 @@ import path from "path";
 import {
   EVENT_ROLES,
   EventInput,
+  GENERAL_OVERVIEW_PRODUCT,
   DashboardData,
   LocalFileReference,
   Overview,
@@ -449,7 +450,7 @@ function normalizeRequirement(requirement: Partial<Requirement>): Requirement {
 function normalizeOverview(overview: Partial<Overview>): Overview {
   const models = normalizeTextList(overview.models);
   const others = normalizeTextList(overview.others);
-  const products = [...models, ...others];
+  const products = overviewProducts({ models, others, description: "", requirements: [] });
 
   return {
     models,
@@ -574,7 +575,7 @@ function nextOverviewRequirementId(existing: OverviewRequirement[]) {
 }
 
 function overviewProducts(overview: Overview) {
-  return [...overview.models, ...overview.others];
+  return Array.from(new Set([GENERAL_OVERVIEW_PRODUCT, ...overview.models, ...overview.others]));
 }
 
 function ticketPrefix(projectName: string) {

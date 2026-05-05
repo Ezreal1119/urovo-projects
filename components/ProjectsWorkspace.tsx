@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import type { DashboardData, Overview, OverviewRequirement, ProjectInfo, ProjectListItem, Requirement, Ticket } from "@/lib/types";
+import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type Requirement, type Ticket } from "@/lib/types";
 import type { DashboardFilter, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
@@ -88,6 +88,13 @@ export default function ProjectsWorkspace() {
     overview.requirements.find(
       (requirement) => requirement.id === selectedOverviewRequirementId,
     ) ?? null;
+  const overviewProductOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([GENERAL_OVERVIEW_PRODUCT, ...overview.models, ...overview.others]),
+      ),
+    [overview.models, overview.others],
+  );
 
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLowerCase();
@@ -1452,7 +1459,7 @@ export default function ProjectsWorkspace() {
       {selectedOverviewRequirement ? (
         <OverviewRequirementDrawer
           requirement={selectedOverviewRequirement}
-          products={[...overview.models, ...overview.others]}
+          products={overviewProductOptions}
           requirements={requirements}
           saving={saving}
           onClose={() => {
@@ -1491,7 +1498,7 @@ export default function ProjectsWorkspace() {
 
       {showNewOverviewRequirement ? (
         <OverviewRequirementModal
-          products={[...overview.models, ...overview.others]}
+          products={overviewProductOptions}
           requirements={requirements}
           saving={saving}
           onClose={() => setShowNewOverviewRequirement(false)}
