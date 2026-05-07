@@ -43,7 +43,14 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3824](http://localhost:3824) with your browser to see the development app.
+
+Production start uses port `4824`:
+
+```bash
+npm run build
+npm run start
+```
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
