@@ -1,4 +1,5 @@
-import type { Overview, ProjectInfo, Requirement, Ticket, TicketPriority, TimelineEvent } from "@/lib/types";
+import type { Overview, ProjectInfo, Requirement, RequirementTimelineItem, Ticket, TicketPriority, TimelineEvent } from "@/lib/types";
+import { GENERAL_OVERVIEW_PRODUCT } from "@/lib/types";
 import { APP_TIME_ZONE } from "@/lib/time";
 import { eventRoleLabels, priorityLabels, requirementStatusLabels, statusLabels } from "./labels";
 import { formatDateOnly } from "./formatters";
@@ -30,7 +31,7 @@ export function buildProjectSummary(
     );
     const demandLines = ["## Demands"];
 
-    for (const demand of overview.requirements) {
+    for (const demand of sortOverviewDemandsForSummary(overview.requirements)) {
       demandLines.push("", `### ${demand.product}:`, "");
       for (const simpleRequirement of demand.simple_requirements) {
         demandLines.push(`- ${simpleRequirement}`);
@@ -40,10 +41,7 @@ export function buildProjectSummary(
         if (!linkedRequirement) {
           continue;
         }
-        demandLines.push(
-          `- ${stripBracketMetadata(linkedRequirement.title)}`,
-          `  - **Status**: "${requirementStatusLabels[linkedRequirement.status]}"`,
-        );
+        demandLines.push(`- ${stripBracketMetadata(linkedRequirement.title)}`);
       }
       if (demand.remark) {
         demandLines.push(`- Remark: ${demand.remark}`);
@@ -51,6 +49,41 @@ export function buildProjectSummary(
     }
 
     sections.push(demandLines.join("\n"));
+  }
+
+  const activeRequirements = requirements.filter(
+    (requirement) => requirement.status !== "finished",
+  );
+  if (activeRequirements.length > 0) {
+    const requirementLines = ["## Requirements"];
+
+    activeRequirements.forEach((requirement, index) => {
+      if (index > 0) {
+        requirementLines.push("", "---");
+      }
+      requirementLines.push(
+        "",
+        `### ${index + 1}. ${stripBracketMetadata(requirement.title)}:`,
+        `  - **Status**: "${requirementStatusLabels[requirement.status]}"`,
+      );
+      const latestTimelineItem = latestRequirementTimelineItem(
+        requirement.timeline,
+      );
+      if (latestTimelineItem) {
+        requirementLines.push(
+          "",
+          "```",
+          `Latest progress - Time: ${formatDateOnly(latestTimelineItem.time)}`,
+          "",
+          "<-----Content Below----->",
+          "",
+          latestTimelineItem.remark,
+          "```",
+        );
+      }
+    });
+
+    sections.push(requirementLines.join("\n"));
   }
 
   const activeTickets = tickets
@@ -104,6 +137,17 @@ export function stripBracketMetadata(title: string) {
   return stripped || "Untitled";
 }
 
+export function sortOverviewDemandsForSummary(demands: Overview["requirements"]) {
+  return [...demands].sort((left, right) => {
+    const leftIsGeneral = left.product === GENERAL_OVERVIEW_PRODUCT;
+    const rightIsGeneral = right.product === GENERAL_OVERVIEW_PRODUCT;
+    if (leftIsGeneral !== rightIsGeneral) {
+      return leftIsGeneral ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
 export const ticketSummaryPriorityRank: Record<TicketPriority, number> = {
   low: 0,
   medium: 1,
@@ -115,6 +159,17 @@ export function latestTicketEvent(events: TimelineEvent[]) {
   return events.reduce<TimelineEvent | null>((latest, event) => {
     if (!latest || event.time.localeCompare(latest.time) > 0) {
       return event;
+    }
+    return latest;
+  }, null);
+}
+
+export function latestRequirementTimelineItem(
+  timeline: RequirementTimelineItem[],
+) {
+  return timeline.reduce<RequirementTimelineItem | null>((latest, item) => {
+    if (!latest || item.time.localeCompare(latest.time) > 0) {
+      return item;
     }
     return latest;
   }, null);

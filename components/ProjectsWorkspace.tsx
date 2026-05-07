@@ -1275,6 +1275,12 @@ export default function ProjectsWorkspace() {
             <>
               <ProjectHeader
                 project={selectedProject}
+                onResolveProjectPath={async () => {
+                  const data = await api<{ path: string }>(
+                    `${projectApiPath(selectedFolder)}/path`,
+                  );
+                  return data.path;
+                }}
                 mode={projectMode}
                 onModeChange={switchProjectMode}
               />

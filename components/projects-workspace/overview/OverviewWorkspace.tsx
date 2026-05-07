@@ -5,17 +5,41 @@ import type { OverviewRequirementDraft, OverviewSettingsDraft, ProjectMode } fro
 import { projectModeLabel } from "../labels";
 import { formatDate, formatDateTimeFull } from "../formatters";
 import { emptyOverviewRequirementDraft, overviewRequirementDraftsEqual, overviewRequirementToDraft, overviewSettingsKey, overviewToSettingsDraft } from "../drafts";
+import { copyTextToClipboard } from "../summary";
 import { Field, LinkedRequirementChips, Overlay, RequirementStatusBadge } from "../ui";
 
 export function ProjectHeader({
   project,
+  onResolveProjectPath,
   mode,
   onModeChange,
 }: {
   project: ProjectInfo;
+  onResolveProjectPath: () => Promise<string>;
   mode: ProjectMode;
   onModeChange: (mode: ProjectMode) => void;
 }) {
+  const [pathCopied, setPathCopied] = useState(false);
+  const [pathCopyBlocked, setPathCopyBlocked] = useState(false);
+
+  async function copyProjectPath() {
+    setPathCopied(false);
+    setPathCopyBlocked(false);
+    try {
+      const projectPath = await onResolveProjectPath();
+      const didCopy = await copyTextToClipboard(projectPath);
+      if (!didCopy) {
+        setPathCopyBlocked(true);
+        return;
+      }
+    } catch {
+      setPathCopyBlocked(true);
+      return;
+    }
+    setPathCopied(true);
+    window.setTimeout(() => setPathCopied(false), 1800);
+  }
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -27,6 +51,27 @@ export function ProjectHeader({
             <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
               {project.sales || "Unknown"}
             </span>
+            <button
+              type="button"
+              onClick={() => void copyProjectPath()}
+              className={`grid h-6 w-6 place-items-center rounded-md border text-xs shadow-sm transition ${
+                pathCopied
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                  : pathCopyBlocked
+                    ? "border-amber-300 bg-amber-50 text-amber-700"
+                    : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+              }`}
+              aria-label={
+                pathCopied
+                  ? "Project path copied"
+                  : pathCopyBlocked
+                    ? "Project path copy failed"
+                    : "Copy project path"
+              }
+              title={pathCopied ? "Copied" : "Copy project path"}
+            >
+              {pathCopied ? "✓" : "⧉"}
+            </button>
           </div>
           <div className="mt-3 text-xs text-slate-400">
             Created at {formatDate(project.created_at)}
