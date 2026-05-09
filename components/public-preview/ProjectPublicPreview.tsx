@@ -6,7 +6,9 @@ import type {
   Overview,
   ProjectInfo,
   Requirement,
+  RequirementStatus,
   Ticket,
+  TicketStatus,
 } from "@/lib/types";
 import {
   buildProjectSummary,
@@ -21,6 +23,7 @@ import {
 import {
   eventRoleLabels,
   priorityLabels,
+  requirementStatusLabels,
   statusLabels,
 } from "@/components/projects-workspace/labels";
 import {
@@ -35,6 +38,41 @@ import {
 } from "@/components/projects-workspace/ui";
 
 type PreviewTab = "overview" | "tickets" | "requirements";
+type TicketPreviewFilter =
+  | "all"
+  | "active"
+  | "pending_internal"
+  | "pending_customer"
+  | "urgent"
+  | "resolved";
+type RequirementPreviewFilter =
+  | "all"
+  | "active"
+  | "pending"
+  | "in_progress"
+  | "testing"
+  | "finished";
+
+const ticketPreviewFilters: { value: TicketPreviewFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "pending_internal", label: "Pending Internal" },
+  { value: "pending_customer", label: "Pending Customer" },
+  { value: "urgent", label: "Urgent" },
+  { value: "resolved", label: "Resolved" },
+];
+
+const requirementPreviewFilters: {
+  value: RequirementPreviewFilter;
+  label: string;
+}[] = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "testing", label: "Testing" },
+  { value: "finished", label: "Finished" },
+];
 
 export default function ProjectPublicPreview({
   project,
@@ -48,9 +86,26 @@ export default function ProjectPublicPreview({
   tickets: Ticket[];
 }) {
   const [tab, setTab] = useState<PreviewTab>("overview");
+  const [query, setQuery] = useState("");
+  const [ticketFilter, setTicketFilter] = useState<TicketPreviewFilter>("all");
+  const [requirementFilter, setRequirementFilter] =
+    useState<RequirementPreviewFilter>("all");
   const summary = useMemo(
     () => buildProjectSummary(project, overview, requirements, tickets),
     [overview, project, requirements, tickets],
+  );
+  const filteredDemands = useMemo(
+    () => filterPreviewDemands(overview, requirements, query),
+    [overview, requirements, query],
+  );
+  const filteredTickets = useMemo(
+    () => filterPreviewTickets(tickets, ticketFilter, query),
+    [tickets, ticketFilter, query],
+  );
+  const filteredRequirements = useMemo(
+    () =>
+      filterPreviewRequirements(requirements, tickets, requirementFilter, query),
+    [requirements, tickets, requirementFilter, query],
   );
 
   return (
@@ -100,12 +155,37 @@ export default function ProjectPublicPreview({
           </div>
         </section>
 
+        <PreviewFilterBar
+          tab={tab}
+          query={query}
+          ticketFilter={ticketFilter}
+          requirementFilter={requirementFilter}
+          onQueryChange={setQuery}
+          onTicketFilterChange={setTicketFilter}
+          onRequirementFilterChange={setRequirementFilter}
+        />
+
         {tab === "overview" ? (
-          <OverviewPreview overview={overview} requirements={requirements} />
+          <OverviewPreview
+            overview={overview}
+            requirements={requirements}
+            demands={filteredDemands}
+            totalDemands={overview.requirements.length}
+            searching={query.trim().length > 0}
+          />
         ) : tab === "tickets" ? (
-          <TicketsPreview tickets={tickets} />
+          <TicketsPreview
+            tickets={filteredTickets}
+            totalTickets={tickets.length}
+            filtering={query.trim().length > 0 || ticketFilter !== "all"}
+          />
         ) : (
-          <RequirementsPreview requirements={requirements} tickets={tickets} />
+          <RequirementsPreview
+            requirements={filteredRequirements}
+            totalRequirements={requirements.length}
+            tickets={tickets}
+            filtering={query.trim().length > 0 || requirementFilter !== "all"}
+          />
         )}
       </div>
     </main>
@@ -186,17 +266,104 @@ function TabSwitcher({
   );
 }
 
+function PreviewFilterBar({
+  tab,
+  query,
+  ticketFilter,
+  requirementFilter,
+  onQueryChange,
+  onTicketFilterChange,
+  onRequirementFilterChange,
+}: {
+  tab: PreviewTab;
+  query: string;
+  ticketFilter: TicketPreviewFilter;
+  requirementFilter: RequirementPreviewFilter;
+  onQueryChange: (query: string) => void;
+  onTicketFilterChange: (filter: TicketPreviewFilter) => void;
+  onRequirementFilterChange: (filter: RequirementPreviewFilter) => void;
+}) {
+  return (
+    <section className="mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="min-w-64 flex-1">
+          <span className="sr-only">Search preview</span>
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-sm"
+            placeholder={
+              tab === "overview"
+                ? "Search demands"
+                : tab === "tickets"
+                  ? "Search tickets"
+                  : "Search requirements"
+            }
+          />
+        </label>
+        {tab === "tickets" ? (
+          <FilterChips
+            options={ticketPreviewFilters}
+            value={ticketFilter}
+            onChange={onTicketFilterChange}
+          />
+        ) : tab === "requirements" ? (
+          <FilterChips
+            options={requirementPreviewFilters}
+            value={requirementFilter}
+            onChange={onRequirementFilterChange}
+          />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function FilterChips<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={`h-9 rounded-lg border px-3 text-sm font-medium transition ${
+            value === option.value
+              ? "border-slate-900 bg-slate-950 text-white shadow-sm"
+              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function OverviewPreview({
   overview,
   requirements,
+  demands,
+  totalDemands,
+  searching,
 }: {
   overview: Overview;
   requirements: Requirement[];
+  demands: Overview["requirements"];
+  totalDemands: number;
+  searching: boolean;
 }) {
   const requirementMap = new Map(
     requirements.map((requirement) => [requirement.id, requirement]),
   );
-  const demands = sortOverviewDemandsForSummary(overview.requirements);
 
   return (
     <div className="mt-5 space-y-5">
@@ -221,7 +388,7 @@ function OverviewPreview({
             Product demands
           </h2>
           <span className="text-xs text-slate-500">
-            {demands.length} shown
+            {visibleCountText(demands.length, totalDemands)}
           </span>
         </div>
         <div className="space-y-3">
@@ -263,7 +430,7 @@ function OverviewPreview({
                       >
                         <span className="font-medium text-slate-700">
                           {requirement
-                            ? `[${requirement.id}] ${stripBracketMetadata(requirement.title)}`
+                            ? `[${requirement.id}] ${requirement.title}`
                             : requirementId}
                         </span>
                         {requirement ? (
@@ -283,6 +450,15 @@ function OverviewPreview({
               ) : null}
             </article>
           ))}
+          {demands.length === 0 ? (
+            <EmptyPreview
+              text={
+                searching
+                  ? "No matching product demands."
+                  : "No product demands for this project."
+              }
+            />
+          ) : null}
         </div>
       </section>
     </div>
@@ -309,12 +485,22 @@ function RelatedLine({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-function TicketsPreview({ tickets }: { tickets: Ticket[] }) {
+function TicketsPreview({
+  tickets,
+  totalTickets,
+  filtering,
+}: {
+  tickets: Ticket[];
+  totalTickets: number;
+  filtering: boolean;
+}) {
   return (
     <section className="mt-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">Tickets</h2>
-        <span className="text-xs text-slate-500">{tickets.length} shown</span>
+        <span className="text-xs text-slate-500">
+          {visibleCountText(tickets.length, totalTickets)}
+        </span>
       </div>
       <div className="space-y-3">
         {tickets.map((ticket) => {
@@ -329,7 +515,7 @@ function TicketsPreview({ tickets }: { tickets: Ticket[] }) {
                   <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
                     {ticket.id}
                   </span>
-                  {stripBracketMetadata(ticket.title)}
+                  {ticket.title}
                 </h3>
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                   <StatusBadge status={ticket.status} />
@@ -364,7 +550,13 @@ function TicketsPreview({ tickets }: { tickets: Ticket[] }) {
           );
         })}
         {tickets.length === 0 ? (
-          <EmptyPreview text="No tickets for this project." />
+          <EmptyPreview
+            text={
+              filtering
+                ? "No matching tickets."
+                : "No tickets for this project."
+            }
+          />
         ) : null}
       </div>
     </section>
@@ -373,10 +565,14 @@ function TicketsPreview({ tickets }: { tickets: Ticket[] }) {
 
 function RequirementsPreview({
   requirements,
+  totalRequirements,
   tickets,
+  filtering,
 }: {
   requirements: Requirement[];
+  totalRequirements: number;
   tickets: Ticket[];
+  filtering: boolean;
 }) {
   const ticketMap = new Map(tickets.map((ticket) => [ticket.id, ticket]));
 
@@ -385,7 +581,7 @@ function RequirementsPreview({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">Requirements</h2>
         <span className="text-xs text-slate-500">
-          {requirements.length} shown
+          {visibleCountText(requirements.length, totalRequirements)}
         </span>
       </div>
       <div className="space-y-3">
@@ -403,7 +599,7 @@ function RequirementsPreview({
                   <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
                     {requirement.id}
                   </span>
-                  {stripBracketMetadata(requirement.title)}
+                  {requirement.title}
                 </h3>
                 <RequirementStatusBadge status={requirement.status} />
               </div>
@@ -425,7 +621,7 @@ function RequirementsPreview({
                         >
                           <span className="font-medium text-slate-700">
                             {ticket
-                              ? `[${ticket.id}] ${stripBracketMetadata(ticket.title)}`
+                              ? `[${ticket.id}] ${ticket.title}`
                               : ticketId}
                           </span>
                           {ticket ? (
@@ -457,7 +653,13 @@ function RequirementsPreview({
           );
         })}
         {requirements.length === 0 ? (
-          <EmptyPreview text="No requirements for this project." />
+          <EmptyPreview
+            text={
+              filtering
+                ? "No matching requirements."
+                : "No requirements for this project."
+            }
+          />
         ) : null}
       </div>
     </section>
@@ -491,4 +693,196 @@ function EmptyPreview({ text }: { text: string }) {
       {text}
     </div>
   );
+}
+
+function filterPreviewDemands(
+  overview: Overview,
+  requirements: Requirement[],
+  query: string,
+) {
+  const normalizedQuery = normalizeQuery(query);
+  const demands = sortOverviewDemandsForSummary(overview.requirements);
+  if (!normalizedQuery) {
+    return demands;
+  }
+
+  const requirementMap = new Map(
+    requirements.map((requirement) => [requirement.id, requirement]),
+  );
+
+  return demands.filter((demand) => {
+    const linkedRequirementText = demand.linked_requirements
+      .map((requirementId) => {
+        const requirement = requirementMap.get(requirementId);
+        return requirement
+          ? [
+              requirement.id,
+              requirement.title,
+              stripBracketMetadata(requirement.title),
+              requirementStatusLabels[requirement.status],
+            ].join(" ")
+          : requirementId;
+      })
+      .join(" ");
+
+    return includesQuery(
+      [
+        overview.description,
+        ...overview.models,
+        ...overview.others,
+        demand.id,
+        demand.product,
+        ...demand.simple_requirements,
+        linkedRequirementText,
+        demand.remark,
+      ],
+      normalizedQuery,
+    );
+  });
+}
+
+function filterPreviewTickets(
+  tickets: Ticket[],
+  filter: TicketPreviewFilter,
+  query: string,
+) {
+  const normalizedQuery = normalizeQuery(query);
+  return tickets.filter((ticket) => {
+    if (!matchesTicketFilter(ticket, filter)) {
+      return false;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+    return includesQuery(
+      [
+        ticket.id,
+        ticket.title,
+        stripBracketMetadata(ticket.title),
+        statusLabels[ticket.status],
+        priorityLabels[ticket.priority],
+        ticket.summary,
+        ticket.next_action,
+        ...ticket.events.map((event) =>
+          [
+            eventRoleLabels[event.role],
+            formatDateOnly(event.time),
+            formatDateTimeFull(event.time),
+            event.content,
+          ].join(" "),
+        ),
+      ],
+      normalizedQuery,
+    );
+  });
+}
+
+function filterPreviewRequirements(
+  requirements: Requirement[],
+  tickets: Ticket[],
+  filter: RequirementPreviewFilter,
+  query: string,
+) {
+  const normalizedQuery = normalizeQuery(query);
+  const ticketMap = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+
+  return requirements.filter((requirement) => {
+    if (!matchesRequirementFilter(requirement, filter)) {
+      return false;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    const relatedTicketText = requirement.related_tickets
+      .map((ticketId) => {
+        const ticket = ticketMap.get(ticketId);
+        return ticket
+          ? [
+              ticket.id,
+              ticket.title,
+              stripBracketMetadata(ticket.title),
+              statusLabels[ticket.status],
+              priorityLabels[ticket.priority],
+            ].join(" ")
+          : ticketId;
+      })
+      .join(" ");
+
+    return includesQuery(
+      [
+        requirement.id,
+        requirement.title,
+        stripBracketMetadata(requirement.title),
+        requirementStatusLabels[requirement.status],
+        requirement.details,
+        relatedTicketText,
+        ...requirement.timeline.map((item) =>
+          [
+            formatDateOnly(item.time),
+            formatDateTimeFull(item.time),
+            item.remark,
+          ].join(" "),
+        ),
+      ],
+      normalizedQuery,
+    );
+  });
+}
+
+function matchesTicketFilter(ticket: Ticket, filter: TicketPreviewFilter) {
+  const statusMatchers: Record<
+    Exclude<TicketPreviewFilter, "all" | "active" | "urgent">,
+    TicketStatus
+  > = {
+    pending_internal: "pending_internal",
+    pending_customer: "pending_customer",
+    resolved: "resolved",
+  };
+
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "active") {
+    return ticket.status !== "resolved";
+  }
+  if (filter === "urgent") {
+    return ticket.priority === "urgent";
+  }
+  return ticket.status === statusMatchers[filter];
+}
+
+function matchesRequirementFilter(
+  requirement: Requirement,
+  filter: RequirementPreviewFilter,
+) {
+  const statusMatchers: Record<
+    Exclude<RequirementPreviewFilter, "all" | "active">,
+    RequirementStatus
+  > = {
+    pending: "pending",
+    in_progress: "in_progress",
+    testing: "testing",
+    finished: "finished",
+  };
+
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "active") {
+    return requirement.status !== "finished";
+  }
+  return requirement.status === statusMatchers[filter];
+}
+
+function includesQuery(values: string[], normalizedQuery: string) {
+  return values.join(" ").toLowerCase().includes(normalizedQuery);
+}
+
+function normalizeQuery(query: string) {
+  return query.trim().toLowerCase();
+}
+
+function visibleCountText(visible: number, total: number) {
+  return visible === total ? `${total} shown` : `${visible} of ${total} shown`;
 }
