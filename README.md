@@ -1,21 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Urovo Projects
 
-## Getting Started
+Local project workspace for tracking Urovo technical support work across
+projects, tickets, requirements, overview demands, supporting files, and
+generated progress reports.
 
-Create `.env.local` and configure the local project data root:
+The app is a Next.js App Router project. Data is read from and written directly
+to JSON files under a local project data root configured with `PROJECTS_ROOT`.
+
+## Features
+
+- Project dashboard grouped by country and project folder.
+- Ticket tracking with status, priority, next action, timeline events, local
+  file references, and optional Cloudinary assets.
+- Requirement tracking with status, timeline updates, related tickets, local
+  file references, and optional Cloudinary assets.
+- Project overview management for product models, services, descriptions, and
+  customer-facing demand items.
+- Public project preview at `/urovo-projects?project_id=<project_id>`.
+- Date-range report generation using the Qwen chat completions API.
+
+## Requirements
+
+- Node.js 20 or newer.
+- npm, or another package manager that can run the scripts in `package.json`.
+- A local project data directory containing country/project folders.
+
+## Configuration
+
+Create `.env.local` in the repository root:
 
 ```env
 PROJECTS_ROOT=/absolute/path/to/projects/root
 ```
 
-### Cloudinary asset uploads
+`PROJECTS_ROOT` should contain country folders. Each project folder must start
+with `proj_`:
 
-This app can upload ticket and requirement assets to Cloudinary. To enable it:
+```text
+projects-root/
+  China/
+    proj_customer-terminal/
+      project.json
+      overview.json
+      tickets.json
+      requirements.json
+      docs/
+```
 
-1. Create or sign in to a Cloudinary account.
-2. Open the Cloudinary Console dashboard.
-3. Copy your `cloud_name`, `api_key`, and `api_secret`.
-4. Add them to `.env.local`:
+The JSON files are created or updated by the app where supported. Missing
+`overview.json`, `tickets.json`, and `requirements.json` are treated as empty
+data sets. `project.json` is used for project metadata.
+
+### Optional: Cloudinary Assets
+
+Ticket and requirement asset uploads require Cloudinary credentials:
 
 ```env
 CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -23,50 +61,73 @@ CLOUDINARY_API_KEY=your_api_key
 CLOUDINARY_API_SECRET=your_api_secret
 ```
 
-5. Restart the dev server after changing `.env.local`.
+Uploaded files are stored under a Cloudinary `urovo-projects/...` folder. The
+app enforces a 100 MB upload limit per file.
 
-Useful Cloudinary references:
+### Optional: Qwen Reports
 
-- [Node.js SDK](https://cloudinary.com/documentation/node_integration)
-- [Admin API](https://cloudinary.com/documentation/admin_api)
-- [Delete assets](https://cloudinary.com/documentation/delete_assets)
+Report generation requires a Qwen API key and a report prompt file inside
+`PROJECTS_ROOT`:
 
-First, run the development server:
+```env
+QWEN_API_KEY=your_qwen_api_key
+```
+
+```text
+projects-root/
+  CHANGE_LOG.json
+  report_prompt.md
+```
+
+Reports are generated from ticket and requirement change-log activity within the
+selected date range.
+
+Restart the dev server after changing `.env.local`.
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run the development server on port `3824`:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3824](http://localhost:3824) with your browser to see the development app.
+Open [http://localhost:3824](http://localhost:3824).
 
-Production start uses port `4824`:
+Useful scripts:
 
 ```bash
+npm run lint
 npm run build
 npm run start
 ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm run start` serves the production build on port `4824`, after
+`npm run build`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
+- `app/` - App Router pages and API route handlers.
+- `components/ProjectsWorkspace.tsx` - main client workspace.
+- `components/projects-workspace/` - dashboard, tickets, requirements,
+  overview, references, assets, dialogs, and shared UI.
+- `components/public-preview/` - public project preview UI.
+- `lib/projects.ts` - project JSON read/write and normalization.
+- `lib/local-references.ts` - project `docs/` file browsing and downloads.
+- `lib/cloudinary-assets.ts` - Cloudinary upload, list, and delete helpers.
+- `lib/reports.ts` - date-range report context and Qwen request handling.
 
-To learn more about Next.js, take a look at the following resources:
+## Data Notes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Project paths are always `<country>/<proj_folder>`.
+- Local references must point to files inside the selected project's `docs/`
+  folder.
+- Ticket statuses are `pending_internal`, `pending_customer`, and `resolved`.
+- Requirement statuses are `pending`, `in_progress`, `testing`, and `finished`.
+- Timestamps are generated in Beijing time by the server helpers.
