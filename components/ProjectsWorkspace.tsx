@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type Requirement, type Ticket } from "@/lib/types";
-import type { DashboardFilter, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
+import type { AiAnalysisResult, DashboardFilter, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
@@ -18,7 +18,14 @@ import { RequirementDrawer, RequirementModal, RequirementsWorkspace } from "./pr
 import { TicketCard, TicketDrawer, TicketModal } from "./projects-workspace/tickets/TicketsWorkspace";
 import { ProjectTreeGroup } from "./projects-workspace/sidebar/ProjectTreeGroup";
 import { Metric, Toast, Pagination } from "./projects-workspace/ui";
-import { GenerateReportDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
+import { AiAnalysisDialog, GenerateReportDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
+
+type AiAnalysisTarget = {
+  entityType: "ticket" | "requirement";
+  entityId: string;
+  title: string;
+  hasUnsavedChanges: boolean;
+};
 
 export default function ProjectsWorkspace() {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
@@ -61,6 +68,12 @@ export default function ProjectsWorkspace() {
   const [showGenerateReport, setShowGenerateReport] = useState(false);
   const [generatedProjectJson, setGeneratedProjectJson] = useState("");
   const [generatedProjectSummary, setGeneratedProjectSummary] = useState("");
+  const [aiAnalysisTarget, setAiAnalysisTarget] =
+    useState<AiAnalysisTarget | null>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] =
+    useState<AiAnalysisResult | null>(null);
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const [aiAnalysisError, setAiAnalysisError] = useState("");
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
   const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
@@ -519,6 +532,61 @@ export default function ProjectsWorkspace() {
       method: "POST",
       body: JSON.stringify(draft),
     });
+  }
+
+  async function analyzeTicket(ticket: Ticket) {
+    setAiAnalysisTarget({
+      entityType: "ticket",
+      entityId: ticket.id,
+      title: ticket.title,
+      hasUnsavedChanges: selectedTicketDirty,
+    });
+    setAiAnalysisResult(null);
+    setAiAnalysisError("");
+    setAiAnalysisLoading(true);
+    try {
+      const data = await api<{ analysis: AiAnalysisResult }>(
+        `${projectApiPath(selectedFolder)}/tickets/${ticket.id}/analyze`,
+        { method: "POST" },
+      );
+      setAiAnalysisResult(data.analysis);
+    } catch (requestError) {
+      setAiAnalysisError((requestError as Error).message);
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  }
+
+  async function analyzeRequirement(requirement: Requirement) {
+    setAiAnalysisTarget({
+      entityType: "requirement",
+      entityId: requirement.id,
+      title: requirement.title,
+      hasUnsavedChanges: selectedRequirementDirty,
+    });
+    setAiAnalysisResult(null);
+    setAiAnalysisError("");
+    setAiAnalysisLoading(true);
+    try {
+      const data = await api<{ analysis: AiAnalysisResult }>(
+        `${projectApiPath(selectedFolder)}/requirements/${requirement.id}/analyze`,
+        { method: "POST" },
+      );
+      setAiAnalysisResult(data.analysis);
+    } catch (requestError) {
+      setAiAnalysisError((requestError as Error).message);
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  }
+
+  function closeAiAnalysisDialog() {
+    if (aiAnalysisLoading) {
+      return;
+    }
+    setAiAnalysisTarget(null);
+    setAiAnalysisResult(null);
+    setAiAnalysisError("");
   }
 
   useEffect(() => {
@@ -1425,9 +1493,15 @@ export default function ProjectsWorkspace() {
           browseApiPath={`${projectApiPath(selectedFolder)}/references/browse`}
           referenceApiPath={`${projectApiPath(selectedFolder)}/tickets/${selectedTicket.id}/references`}
           saving={saving}
+          analyzing={
+            aiAnalysisLoading &&
+            aiAnalysisTarget?.entityType === "ticket" &&
+            aiAnalysisTarget.entityId === selectedTicket.id
+          }
           onClose={closeSelectedTicket}
           onDirtyChange={setSelectedTicketDirty}
           onSave={(draft) => updateTicket(selectedTicket.id, draft)}
+          onAnalyze={() => void analyzeTicket(selectedTicket)}
           onDelete={() => void deleteTicket(selectedTicket.id)}
           onAddEvent={(draft) => void addEvent(selectedTicket.id, draft)}
           onUpdateEvent={(index, draft) =>
@@ -1445,9 +1519,15 @@ export default function ProjectsWorkspace() {
           referenceApiPath={`${projectApiPath(selectedFolder)}/requirements/${selectedRequirement.id}/references`}
           tickets={tickets}
           saving={saving}
+          analyzing={
+            aiAnalysisLoading &&
+            aiAnalysisTarget?.entityType === "requirement" &&
+            aiAnalysisTarget.entityId === selectedRequirement.id
+          }
           onClose={closeSelectedRequirement}
           onDirtyChange={setSelectedRequirementDirty}
           onSave={(draft) => updateRequirement(selectedRequirement.id, draft)}
+          onAnalyze={() => void analyzeRequirement(selectedRequirement)}
           onDelete={() => void deleteRequirement(selectedRequirement.id)}
           onOpenTicket={openRelatedTicket}
           onAddTimeline={(draft) =>
@@ -1538,6 +1618,16 @@ export default function ProjectsWorkspace() {
           projectName={selectedProject?.project_name ?? "Project"}
           summary={generatedProjectSummary}
           onClose={() => setGeneratedProjectSummary("")}
+        />
+      ) : null}
+
+      {aiAnalysisTarget ? (
+        <AiAnalysisDialog
+          analysis={aiAnalysisResult}
+          loading={aiAnalysisLoading}
+          error={aiAnalysisError}
+          hasUnsavedChanges={aiAnalysisTarget.hasUnsavedChanges}
+          onClose={closeAiAnalysisDialog}
         />
       ) : null}
 

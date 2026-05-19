@@ -1,10 +1,207 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import type { ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
+import type { AiAnalysisResult, ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
 import { emptyProjectJsonDraft, projectJsonDraftsEqual } from "../drafts";
 import { copyTextToClipboard, downloadSummaryMarkdownAsPng, projectSummaryPngFilename } from "../summary";
 import { todayDate } from "../formatters";
 import { Field, Overlay } from "../ui";
+
+export function AiAnalysisDialog({
+  analysis,
+  loading,
+  error,
+  hasUnsavedChanges,
+  onClose,
+}: {
+  analysis: AiAnalysisResult | null;
+  loading: boolean;
+  error: string;
+  hasUnsavedChanges: boolean;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copyBlocked, setCopyBlocked] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [downloadBlocked, setDownloadBlocked] = useState(false);
+
+  async function copyAnalysis() {
+    if (!analysis) {
+      return;
+    }
+    setCopyBlocked(false);
+    setDownloaded(false);
+    setDownloadBlocked(false);
+    const didCopy = await copyTextToClipboard(analysis.markdown);
+    if (!didCopy) {
+      setCopyBlocked(true);
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function downloadAnalysisPng() {
+    if (!analysis) {
+      return;
+    }
+    setCopied(false);
+    setCopyBlocked(false);
+    setDownloadBlocked(false);
+    const didDownload = downloadSummaryMarkdownAsPng(
+      analysis.markdown,
+      projectSummaryPngFilename(`${analysis.entityId}-ai-analysis`),
+    );
+    if (!didDownload) {
+      setDownloadBlocked(true);
+      return;
+    }
+    setDownloaded(true);
+    window.setTimeout(() => setDownloaded(false), 1800);
+  }
+
+  return (
+    <Overlay>
+      <div className="w-full max-w-3xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-slate-950">
+              AI Analysis
+            </h2>
+            <p className="mt-1 truncate text-sm text-slate-500">
+              {analysis
+                ? `[${analysis.entityId}] ${analysis.title}`
+                : "Analyzing saved record"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Close
+          </button>
+        </div>
+
+        {hasUnsavedChanges ? (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Analysis uses the last saved record. Unsaved edits are not included.
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-sm font-medium text-slate-600">
+            Analyzing with AI...
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+            {error}
+          </div>
+        ) : analysis ? (
+          <>
+            <div className="max-h-[60vh] space-y-4 overflow-auto pr-1">
+              <AnalysisSection title="Description" text={analysis.description} />
+              <AnalysisSection title="Progress" text={analysis.progress} />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <AnalysisSection
+                  title="Current Status"
+                  text={analysis.currentStatus}
+                />
+                <AnalysisSection title="Next Step" text={analysis.nextStep} />
+              </div>
+              <section className="rounded-lg border border-slate-200 bg-white p-4">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Timeline
+                </h3>
+                {analysis.events.length > 0 ? (
+                  <div className="mt-3 space-y-3">
+                    {analysis.events.map((event, index) => (
+                      <div
+                        key={`${event.time}-${index}`}
+                        className="grid gap-1 border-l-2 border-slate-200 pl-3 sm:grid-cols-[8rem_minmax(0,1fr)]"
+                      >
+                        <div className="text-xs font-medium text-slate-500">
+                          {event.time}
+                        </div>
+                        <div className="text-sm leading-6 text-slate-700">
+                          {event.summary}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    No timeline events are recorded.
+                  </p>
+                )}
+              </section>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+              <div
+                className={`min-h-5 text-sm font-medium transition ${
+                  copied || downloaded
+                    ? "text-emerald-700"
+                    : copyBlocked || downloadBlocked
+                      ? "text-amber-700"
+                      : "text-slate-400"
+                }`}
+                aria-live="polite"
+              >
+                {copied
+                  ? "Copied Markdown."
+                  : downloaded
+                    ? "PNG downloaded."
+                    : copyBlocked
+                      ? "Clipboard access blocked."
+                      : downloadBlocked
+                        ? "PNG download failed."
+                        : " "}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void copyAnalysis()}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition ${
+                    copied
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                  }`}
+                >
+                  {copied ? "Copied" : "Copy Markdown"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void downloadAnalysisPng()}
+                  className={`rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition ${
+                    downloaded
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                  }`}
+                >
+                  {downloaded ? "Downloaded" : "Download PNG"}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </Overlay>
+  );
+}
+
+function AnalysisSection({ title, text }: { title: string; text: string }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+        {title}
+      </h3>
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+        {text || "-"}
+      </p>
+    </section>
+  );
+}
 
 export function TicketDeleteBlockedDialog({
   blocker,

@@ -160,9 +160,11 @@ export function RequirementDrawer({
   referenceApiPath,
   tickets,
   saving,
+  analyzing,
   onClose,
   onDirtyChange,
   onSave,
+  onAnalyze,
   onDelete,
   onOpenTicket,
   onAddTimeline,
@@ -175,9 +177,11 @@ export function RequirementDrawer({
   referenceApiPath: string;
   tickets: Ticket[];
   saving: boolean;
+  analyzing: boolean;
   onClose: () => void;
   onDirtyChange: (dirty: boolean) => void;
   onSave: (draft: RequirementDraft) => Promise<void>;
+  onAnalyze: () => void;
   onDelete: () => void;
   onOpenTicket: (ticketId: string) => void;
   onAddTimeline: (draft: RequirementTimelineDraft) => void;
@@ -256,10 +260,18 @@ export function RequirementDrawer({
             </section>
           ) : null}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onAnalyze}
+              disabled={saving || analyzing}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {analyzing ? "Analyzing..." : "AI Analyze"}
+            </button>
             <button
               onClick={onDelete}
-              disabled={saving}
+              disabled={saving || analyzing}
               className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
             >
               Delete requirement

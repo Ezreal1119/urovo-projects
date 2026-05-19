@@ -167,3 +167,20 @@ export type ReportGenerateResponse =
       ticketCount: number;
       requirementCount: number;
     };
+
+export type AiAnalysisEvent = {
+  time: string;
+  summary: string;
+};
+
+export type AiAnalysisResult = {
+  entityType: "ticket" | "requirement";
+  entityId: string;
+  title: string;
+  description: string;
+  progress: string;
+  currentStatus: string;
+  nextStep: string;
+  events: AiAnalysisEvent[];
+  markdown: string;
+};
