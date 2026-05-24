@@ -1,7 +1,7 @@
 import type { Requirement, RequirementTimelineItem, Ticket, TimelineEvent } from "./types";
 
-const QWEN_CHAT_COMPLETIONS_URL =
-  "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL =
+  "https://api.deepseek.com/chat/completions";
 
 type AiAnalysisEntityType = "ticket" | "requirement";
 
@@ -32,7 +32,7 @@ type RawAiAnalysis = {
 };
 
 export async function analyzeTicket(ticket: Ticket): Promise<AiAnalysisResult> {
-  const raw = await requestQwenAnalysis(TICKET_ANALYSIS_PROMPT, {
+  const raw = await requestDeepSeekAnalysis(TICKET_ANALYSIS_PROMPT, {
     ticket: compactTicket(ticket),
   });
 
@@ -42,7 +42,7 @@ export async function analyzeTicket(ticket: Ticket): Promise<AiAnalysisResult> {
 export async function analyzeRequirement(
   requirement: Requirement,
 ): Promise<AiAnalysisResult> {
-  const raw = await requestQwenAnalysis(REQUIREMENT_ANALYSIS_PROMPT, {
+  const raw = await requestDeepSeekAnalysis(REQUIREMENT_ANALYSIS_PROMPT, {
     requirement: compactRequirement(requirement),
   });
 
@@ -54,20 +54,20 @@ export async function analyzeRequirement(
   );
 }
 
-async function requestQwenAnalysis(prompt: string, context: unknown) {
-  const apiKey = process.env.QWEN_API_KEY;
+async function requestDeepSeekAnalysis(prompt: string, context: unknown) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    throw new Error("QWEN_API_KEY is not configured.");
+    throw new Error("DEEPSEEK_API_KEY is not configured.");
   }
 
-  const response = await fetch(QWEN_CHAT_COMPLETIONS_URL, {
+  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "qwen-plus",
+      model: "deepseek-v4-pro",
       temperature: 0.1,
       messages: [
         { role: "system", content: prompt },
@@ -77,7 +77,7 @@ async function requestQwenAnalysis(prompt: string, context: unknown) {
   });
 
   if (!response.ok) {
-    throw new Error(`Qwen request failed with status ${response.status}.`);
+    throw new Error(`DeepSeek request failed with status ${response.status}.`);
   }
 
   const data = (await response.json()) as {
@@ -85,7 +85,7 @@ async function requestQwenAnalysis(prompt: string, context: unknown) {
   };
   const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) {
-    throw new Error("Qwen returned an empty analysis.");
+    throw new Error("DeepSeek returned an empty analysis.");
   }
 
   return parseAnalysisJson(content);
@@ -101,7 +101,7 @@ function parseAnalysisJson(content: string): RawAiAnalysis {
     }
     return parsed;
   } catch {
-    throw new Error("Qwen returned invalid analysis JSON.");
+    throw new Error("DeepSeek returned invalid analysis JSON.");
   }
 }
 
@@ -119,7 +119,7 @@ function normalizeAnalysis(
   const markdown = cleanText(raw.markdown);
 
   if (!description || !progress || !currentStatus || !markdown) {
-    throw new Error("Qwen returned an incomplete analysis.");
+    throw new Error("DeepSeek returned an incomplete analysis.");
   }
 
   return {

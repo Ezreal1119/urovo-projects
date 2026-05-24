@@ -16,8 +16,8 @@ import {
 
 const CHANGE_LOG_FILE = "CHANGE_LOG.json";
 const REPORT_PROMPT_FILE = "report_prompt.md";
-const QWEN_CHAT_COMPLETIONS_URL =
-  "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+const DEEPSEEK_CHAT_COMPLETIONS_URL =
+  "https://api.deepseek.com/chat/completions";
 
 export type ReportDateRange = {
   startDate: string;
@@ -83,7 +83,7 @@ export async function generateReport(range: ReportDateRange): Promise<ReportResu
   }
 
   const prompt = await readReportPrompt();
-  const report = await requestQwenReport(prompt, context);
+  const report = await requestDeepSeekReport(prompt, context);
 
   return { status: "generated", report, ticketCount, requirementCount };
 }
@@ -189,20 +189,20 @@ async function readReportPrompt() {
   return readFile(path.join(getProjectsRoot(), REPORT_PROMPT_FILE), "utf8");
 }
 
-async function requestQwenReport(prompt: string, context: ReportContext) {
-  const apiKey = process.env.QWEN_API_KEY;
+async function requestDeepSeekReport(prompt: string, context: ReportContext) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    throw new Error("QWEN_API_KEY is not configured.");
+    throw new Error("DEEPSEEK_API_KEY is not configured.");
   }
 
-  const response = await fetch(QWEN_CHAT_COMPLETIONS_URL, {
+  const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "qwen-plus",
+      model: "deepseek-v4-pro",
       temperature: 0.2,
       messages: [
         { role: "system", content: prompt },
@@ -212,7 +212,7 @@ async function requestQwenReport(prompt: string, context: ReportContext) {
   });
 
   if (!response.ok) {
-    throw new Error(`Qwen request failed with status ${response.status}.`);
+    throw new Error(`DeepSeek request failed with status ${response.status}.`);
   }
 
   const data = (await response.json()) as {
@@ -220,7 +220,7 @@ async function requestQwenReport(prompt: string, context: ReportContext) {
   };
   const report = data.choices?.[0]?.message?.content?.trim();
   if (!report) {
-    throw new Error("Qwen returned an empty report.");
+    throw new Error("DeepSeek returned an empty report.");
   }
   return report;
 }

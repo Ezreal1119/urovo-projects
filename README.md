@@ -17,7 +17,7 @@ to JSON files under a local project data root configured with `PROJECTS_ROOT`.
 - Project overview management for product models, services, descriptions, and
   customer-facing demand items.
 - Public project preview at `/urovo-projects?project_id=<project_id>`.
-- Date-range report generation using the Qwen chat completions API.
+- Date-range report generation using the DeepSeek chat completions API.
 
 ## Requirements
 
@@ -64,13 +64,13 @@ CLOUDINARY_API_SECRET=your_api_secret
 Uploaded files are stored under a Cloudinary `urovo-projects/...` folder. The
 app enforces a 100 MB upload limit per file.
 
-### Optional: Qwen Reports
+### Optional: DeepSeek Reports
 
-Report generation requires a Qwen API key and a report prompt file inside
+Report generation requires a DeepSeek API key and a report prompt file inside
 `PROJECTS_ROOT`:
 
 ```env
-QWEN_API_KEY=your_qwen_api_key
+DEEPSEEK_API_KEY=your_deepseek_api_key
 ```
 
 ```text
@@ -121,7 +121,7 @@ npm run start
 - `lib/projects.ts` - project JSON read/write and normalization.
 - `lib/local-references.ts` - project `docs/` file browsing and downloads.
 - `lib/cloudinary-assets.ts` - Cloudinary upload, list, and delete helpers.
-- `lib/reports.ts` - date-range report context and Qwen request handling.
+- `lib/reports.ts` - date-range report context and DeepSeek request handling.
 
 ## Data Notes
 

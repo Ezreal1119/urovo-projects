@@ -18,7 +18,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Before changing pages, layouts, route handlers, caching, config, or runtime behavior, read the matching bundled guide under `node_modules/next/dist/docs/`.
 - In App Router pages, `params` and `searchParams` are promises. Await them, or use React `use()` only in client components.
 - In App Router route handlers, `context.params` is a promise. Await it before reading dynamic segments.
-- Route handlers that touch the filesystem, Cloudinary, or Qwen must stay on the Node runtime with `export const runtime = "nodejs";`.
+- Route handlers that touch the filesystem, Cloudinary, or DeepSeek must stay on the Node runtime with `export const runtime = "nodejs";`.
 - Use Web `Request`/`Response` APIs and `Response.json(...)` in route handlers. Keep API error responses as JSON with an `error` field, matching existing routes.
 
 ## Local Data Model
@@ -43,7 +43,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 - Cloudinary asset routes depend on `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET`. Keep the 100 MB per-file limit from `MAX_ASSET_BYTES`.
 - Assets are stored under `urovo-projects/<country>/<project>/<tickets|requirements>/<uuid-or-id>`. Use `cloudinaryAssetPrefix` and reject deletes whose `publicId` is outside the expected prefix.
-- Qwen report and analysis calls depend on `QWEN_API_KEY` and use the DashScope OpenAI-compatible chat completions endpoint. Keep prompts grounded in stored records only; do not invent missing project facts.
+- DeepSeek report and analysis calls depend on `DEEPSEEK_API_KEY` and use DeepSeek's OpenAI-compatible chat completions endpoint. Keep prompts grounded in stored records only; do not invent missing project facts.
 - Report generation also depends on `CHANGE_LOG.json` and `report_prompt.md` inside `PROJECTS_ROOT`.
 
 ## Frontend Conventions
