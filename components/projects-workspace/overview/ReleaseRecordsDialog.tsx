@@ -279,7 +279,7 @@ function ReleaseRecordRow({
           {draft.release_date === null ? (
             <input
               type="text"
-              value="Not Release"
+              value="Not Released"
               disabled
               className="form-input"
             />

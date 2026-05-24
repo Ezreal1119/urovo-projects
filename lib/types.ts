@@ -140,6 +140,14 @@ export type ReleaseRecordFile = {
   records: ReleaseRecord[];
 };
 
+export type ReleaseNoteRow = {
+  folder: string;
+  country: string;
+  customer: string;
+  model: string;
+  change_log: string;
+};
+
 export type ChangeLogEntityType = "demand" | "ticket" | "requirement" | "project";
 
 export type ChangeLogAction =

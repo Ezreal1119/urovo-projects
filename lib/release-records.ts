@@ -1,13 +1,14 @@
 import { randomUUID } from "crypto";
 import { readFile, rename, writeFile } from "fs/promises";
 import path from "path";
-import { projectDir, readOverview, readProject } from "./projects";
+import { listProjects, projectDir, readOverview, readProject } from "./projects";
 import { beijingNowIsoString } from "./time";
 import type {
   ReleaseFirmware,
   ReleaseRecord,
   ReleaseRecordFile,
   ReleaseRecordInput,
+  ReleaseNoteRow,
 } from "./types";
 
 const RELEASE_RECORD_FILE = "release-records.json";
@@ -108,6 +109,37 @@ export async function releaseModelsInUse(key: string, models: string[]) {
   const records = await readReleaseRecords(key);
   return Array.from(new Set(records.map((record) => record.model))).filter((model) =>
     wanted.has(model),
+  );
+}
+
+export async function readReleaseNotes(): Promise<ReleaseNoteRow[]> {
+  const projects = await listProjects();
+  const rows = (
+    await Promise.all(
+      projects.map(async (item) => {
+        const records = await readReleaseRecords(item.folder);
+        const country = item.project.country || item.folder.split("/")[0] || "";
+        return records
+          .filter((record) => record.release_date === null)
+          .map((record) => ({
+            folder: item.folder,
+            country,
+            customer: item.project.customer,
+            model: record.model,
+            change_log: record.change_log,
+          }));
+      }),
+    )
+  ).flat();
+
+  return rows.sort(sortReleaseNotes);
+}
+
+function sortReleaseNotes(left: ReleaseNoteRow, right: ReleaseNoteRow) {
+  return (
+    left.country.localeCompare(right.country) ||
+    left.customer.localeCompare(right.customer) ||
+    left.model.localeCompare(right.model)
   );
 }
 

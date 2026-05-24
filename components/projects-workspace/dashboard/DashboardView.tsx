@@ -1,5 +1,5 @@
 import type { DashboardData } from "@/lib/types";
-import type { DashboardFilter, DashboardMode, DashboardRequirement, DashboardTicket } from "../types";
+import type { DashboardFilter, DashboardMode, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket } from "../types";
 import { TICKETS_PER_PAGE } from "../constants";
 import { dashboardFilterLabel, dashboardModeLabel } from "../labels";
 import { dashboardMetrics, dashboardRequirementMetrics } from "../dashboard-selectors";
@@ -22,6 +22,7 @@ export function DashboardView({
   onFilterChange,
   onPreviousPage,
   onNextPage,
+  onOpenReleaseNotes,
   onOpenProject,
   onOpenTicket,
   onOpenRequirement,
@@ -41,6 +42,7 @@ export function DashboardView({
   onFilterChange: (filter: DashboardFilter) => void;
   onPreviousPage: () => void;
   onNextPage: () => void;
+  onOpenReleaseNotes: () => void;
   onOpenProject: (folder: string) => void;
   onOpenTicket: (item: DashboardTicket) => void;
   onOpenRequirement: (item: DashboardRequirement) => void;
@@ -106,21 +108,30 @@ export function DashboardView({
               across {data?.projects.length ?? 0} projects.
             </p>
           </div>
-          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-            {(["tickets", "requirements"] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => onModeChange(item)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  mode === item
-                    ? "bg-white text-slate-950 shadow-sm"
-                    : "text-slate-500 hover:text-slate-950"
-                }`}
-              >
-                {dashboardModeLabel(item)}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenReleaseNotes}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+            >
+              Release Note
+            </button>
+            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+              {(["tickets", "requirements"] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onModeChange(item)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    mode === item
+                      ? "bg-white text-slate-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-950"
+                  }`}
+                >
+                  {dashboardModeLabel(item)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -442,5 +453,87 @@ export function DashboardRequirementRow({
         <span>{item.requirement.timeline.length} updates</span>
       </div>
     </button>
+  );
+}
+
+export function ReleaseNotesDialog({
+  rows,
+  loading,
+  error,
+  onClose,
+  onOpenProject,
+}: {
+  rows: DashboardReleaseNoteRow[];
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+  onOpenProject: (folder: string) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-slate-950/30 p-4">
+      <div className="flex max-h-[84vh] w-full max-w-5xl flex-col rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between gap-4 border-b border-slate-200 p-5">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">
+              Release Note
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Released firmware records across all projects.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+          >
+            Close
+          </button>
+        </div>
+        {error ? (
+          <div className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+        <div className="min-h-0 flex-1 overflow-auto p-5">
+          {loading ? (
+            <EmptyState text="Loading release notes..." />
+          ) : rows.length > 0 ? (
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <div className="grid grid-cols-[160px_200px_180px_minmax(240px,1fr)] border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <div className="p-3">Country</div>
+                <div className="p-3">Customer Name</div>
+                <div className="p-3">Model</div>
+                <div className="p-3">ChangeLog</div>
+              </div>
+              <div className="divide-y divide-slate-200">
+                {rows.map((row, index) => (
+                  <button
+                    key={`${row.folder}-${row.model}-${index}`}
+                    type="button"
+                    onClick={() => onOpenProject(row.folder)}
+                    className="grid w-full grid-cols-[160px_200px_180px_minmax(240px,1fr)] text-left text-sm transition hover:bg-slate-50"
+                  >
+                    <div className="truncate p-3 font-medium text-slate-700">
+                      {row.country || "-"}
+                    </div>
+                    <div className="truncate p-3 text-slate-700">
+                      {row.customer || "-"}
+                    </div>
+                    <div className="truncate p-3 font-medium text-slate-950">
+                      {row.model || "-"}
+                    </div>
+                    <div className="line-clamp-2 p-3 leading-6 text-slate-600">
+                      {row.change_log || "No changelog."}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <EmptyState text="No release notes found." />
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

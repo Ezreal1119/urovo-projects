@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type ReleaseRecord, type ReleaseRecordInput, type Requirement, type Ticket } from "@/lib/types";
-import type { AiAnalysisResult, DashboardFilter, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
+import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
@@ -12,7 +12,7 @@ import { createUuid } from "./projects-workspace/formatters";
 import { requirementStatusLabels, dashboardModeLabel, projectModeLabel } from "./projects-workspace/labels";
 import { readRecentProjects } from "./projects-workspace/recent-projects";
 import { buildProjectSummary } from "./projects-workspace/summary";
-import { DashboardView } from "./projects-workspace/dashboard/DashboardView";
+import { DashboardView, ReleaseNotesDialog } from "./projects-workspace/dashboard/DashboardView";
 import { ProjectHeader, OverviewRequirementDrawer, OverviewRequirementModal, OverviewWorkspace } from "./projects-workspace/overview/OverviewWorkspace";
 import { ReleaseModelPickerDialog, ReleaseRecordsDialog } from "./projects-workspace/overview/ReleaseRecordsDialog";
 import { RequirementDrawer, RequirementModal, RequirementsWorkspace } from "./projects-workspace/requirements/RequirementsWorkspace";
@@ -36,6 +36,12 @@ export default function ProjectsWorkspace() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(
     null,
   );
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const [releaseNoteRows, setReleaseNoteRows] = useState<
+    DashboardReleaseNoteRow[]
+  >([]);
+  const [releaseNotesLoading, setReleaseNotesLoading] = useState(false);
+  const [releaseNotesError, setReleaseNotesError] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("");
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(
     null,
@@ -513,6 +519,27 @@ export default function ProjectsWorkspace() {
     setProjects(
       data.projects.map(({ folder, project }) => ({ folder, project })),
     );
+  }
+
+  async function openReleaseNotes() {
+    setShowReleaseNotes(true);
+    setReleaseNotesLoading(true);
+    setReleaseNotesError("");
+    try {
+      const data = await api<{ rows: DashboardReleaseNoteRow[] }>(
+        "/api/release-notes",
+      );
+      setReleaseNoteRows(data.rows);
+    } catch (requestError) {
+      setReleaseNotesError((requestError as Error).message);
+    } finally {
+      setReleaseNotesLoading(false);
+    }
+  }
+
+  function openReleaseNoteProject(folder: string) {
+    setShowReleaseNotes(false);
+    void loadProject(folder);
   }
 
   function refreshDashboardQuietly() {
@@ -1466,8 +1493,9 @@ export default function ProjectsWorkspace() {
                     )
                   : setDashboardTicketPage((current) =>
                       Math.min(totalDashboardTicketPages, current + 1),
-                    )
+                  )
               }
+              onOpenReleaseNotes={() => void openReleaseNotes()}
               onOpenProject={(folder) => void loadProject(folder)}
               onOpenTicket={openDashboardTicket}
               onOpenRequirement={openDashboardRequirement}
@@ -1759,6 +1787,16 @@ export default function ProjectsWorkspace() {
         <GenerateReportDialog
           onClose={() => setShowGenerateReport(false)}
           onGenerate={generateDashboardReport}
+        />
+      ) : null}
+
+      {showReleaseNotes ? (
+        <ReleaseNotesDialog
+          rows={releaseNoteRows}
+          loading={releaseNotesLoading}
+          error={releaseNotesError}
+          onClose={() => setShowReleaseNotes(false)}
+          onOpenProject={openReleaseNoteProject}
         />
       ) : null}
 

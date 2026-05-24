@@ -2,6 +2,7 @@ import type {
   OverviewRequirement,
   ProjectInfo,
   ProjectListItem,
+  ReleaseNoteRow,
   Requirement,
   Ticket,
   EventRole,
@@ -84,6 +85,8 @@ export type DashboardRequirement = {
   project: ProjectInfo;
   requirement: Requirement;
 };
+
+export type DashboardReleaseNoteRow = ReleaseNoteRow;
 
 export type LinkedRequirementSummary = Pick<Requirement, "id" | "title">;
 
