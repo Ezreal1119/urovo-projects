@@ -13,11 +13,13 @@ export function ProjectHeader({
   onResolveProjectPath,
   mode,
   onModeChange,
+  onOpenReleaseRecords,
 }: {
   project: ProjectInfo;
   onResolveProjectPath: () => Promise<string>;
   mode: ProjectMode;
   onModeChange: (mode: ProjectMode) => void;
+  onOpenReleaseRecords: () => void;
 }) {
   const [pathCopied, setPathCopied] = useState(false);
   const [pathCopyBlocked, setPathCopyBlocked] = useState(false);
@@ -77,21 +79,30 @@ export function ProjectHeader({
             Created at {formatDate(project.created_at)}
           </div>
         </div>
-        <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-          {(["overview", "tickets", "requirements"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => onModeChange(item)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                mode === item
-                  ? "bg-white text-slate-950 shadow-sm"
-                  : "text-slate-500 hover:text-slate-950"
-              }`}
-            >
-              {projectModeLabel(item)}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenReleaseRecords}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+          >
+            Release Record
+          </button>
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+            {(["overview", "tickets", "requirements"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => onModeChange(item)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                  mode === item
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-950"
+                }`}
+              >
+                {projectModeLabel(item)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -197,8 +208,8 @@ export function OverviewSettingsPanel({
   const [draft, setDraft] = useState<OverviewSettingsDraft>(initial);
 
   async function updateAndSave(nextDraft: OverviewSettingsDraft) {
-    setDraft(nextDraft);
     await onSave(nextDraft);
+    setDraft(nextDraft);
     onDirtyChange(false);
   }
 

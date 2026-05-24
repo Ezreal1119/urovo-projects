@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type Requirement, type Ticket } from "@/lib/types";
+import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type ReleaseRecord, type ReleaseRecordInput, type Requirement, type Ticket } from "@/lib/types";
 import type { AiAnalysisResult, DashboardFilter, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
@@ -14,6 +14,7 @@ import { readRecentProjects } from "./projects-workspace/recent-projects";
 import { buildProjectSummary } from "./projects-workspace/summary";
 import { DashboardView } from "./projects-workspace/dashboard/DashboardView";
 import { ProjectHeader, OverviewRequirementDrawer, OverviewRequirementModal, OverviewWorkspace } from "./projects-workspace/overview/OverviewWorkspace";
+import { ReleaseModelPickerDialog, ReleaseRecordsDialog } from "./projects-workspace/overview/ReleaseRecordsDialog";
 import { RequirementDrawer, RequirementModal, RequirementsWorkspace } from "./projects-workspace/requirements/RequirementsWorkspace";
 import { TicketCard, TicketDrawer, TicketModal } from "./projects-workspace/tickets/TicketsWorkspace";
 import { ProjectTreeGroup } from "./projects-workspace/sidebar/ProjectTreeGroup";
@@ -63,6 +64,12 @@ export default function ProjectsWorkspace() {
   const [showNewRequirement, setShowNewRequirement] = useState(false);
   const [showNewOverviewRequirement, setShowNewOverviewRequirement] =
     useState(false);
+  const [showReleaseModelPicker, setShowReleaseModelPicker] = useState(false);
+  const [releaseModel, setReleaseModel] = useState("");
+  const [releaseRecords, setReleaseRecords] = useState<ReleaseRecord[]>([]);
+  const [releaseRecordsLoading, setReleaseRecordsLoading] = useState(false);
+  const [releaseRecordsSaving, setReleaseRecordsSaving] = useState(false);
+  const [releaseRecordsError, setReleaseRecordsError] = useState("");
   const [showProjectJsonGenerator, setShowProjectJsonGenerator] =
     useState(false);
   const [showGenerateReport, setShowGenerateReport] = useState(false);
@@ -422,6 +429,10 @@ export default function ProjectsWorkspace() {
     setOverview(emptyOverview);
     setTickets([]);
     setRequirements([]);
+    setShowReleaseModelPicker(false);
+    setReleaseModel("");
+    setReleaseRecords([]);
+    setReleaseRecordsError("");
     setSelectedTicketDirty(false);
     setSelectedRequirementDirty(false);
     setOverviewDirty(false);
@@ -473,6 +484,9 @@ export default function ProjectsWorkspace() {
       setOverview(emptyOverview);
       setTickets([]);
       setRequirements([]);
+      setReleaseModel("");
+      setReleaseRecords([]);
+      setReleaseRecordsError("");
     }
   }
 
@@ -824,6 +838,7 @@ export default function ProjectsWorkspace() {
       return;
     }
     setSaving(true);
+    setError("");
     try {
       const data = await api<{ overview: Overview }>(
         `${projectApiPath(selectedFolder)}/overview`,
@@ -835,6 +850,9 @@ export default function ProjectsWorkspace() {
       setOverview(data.overview);
       setOverviewDirty(false);
       showToast("Overview changes saved.");
+    } catch (requestError) {
+      setError((requestError as Error).message);
+      throw requestError;
     } finally {
       setSaving(false);
     }
@@ -884,6 +902,121 @@ export default function ProjectsWorkspace() {
     setGeneratedProjectSummary(
       buildProjectSummary(selectedProject, overview, requirements, tickets),
     );
+  }
+
+  async function openReleaseRecords(model: string) {
+    if (!selectedFolder || !model) {
+      return;
+    }
+    setShowReleaseModelPicker(false);
+    setReleaseModel(model);
+    await loadReleaseRecords(model);
+  }
+
+  async function loadReleaseRecords(model = releaseModel) {
+    if (!selectedFolder || !model) {
+      return;
+    }
+    setReleaseRecordsLoading(true);
+    setReleaseRecordsError("");
+    try {
+      const data = await api<{ records: ReleaseRecord[] }>(
+        `${projectApiPath(selectedFolder)}/release-records?model=${encodeURIComponent(model)}`,
+      );
+      setReleaseRecords(data.records);
+    } catch (error) {
+      setReleaseRecordsError((error as Error).message);
+    } finally {
+      setReleaseRecordsLoading(false);
+    }
+  }
+
+  async function createReleaseRecord() {
+    if (!selectedFolder || !releaseModel) {
+      return;
+    }
+    setReleaseRecordsSaving(true);
+    setReleaseRecordsError("");
+    try {
+      const data = await api<{ record: ReleaseRecord }>(
+        `${projectApiPath(selectedFolder)}/release-records`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            model: releaseModel,
+            firmware: { os: "", ufs: "", se: "" },
+            change_log: "",
+            release_date: null,
+            order_count: null,
+            order_time: "",
+          } satisfies ReleaseRecordInput),
+        },
+      );
+      setReleaseRecords((current) => [data.record, ...current]);
+      showToast("Release record added.");
+    } catch (error) {
+      setReleaseRecordsError((error as Error).message);
+    } finally {
+      setReleaseRecordsSaving(false);
+    }
+  }
+
+  async function updateReleaseRecord(
+    recordId: string,
+    input: ReleaseRecordInput,
+  ) {
+    if (!selectedFolder || !releaseModel) {
+      return;
+    }
+    setReleaseRecordsSaving(true);
+    setReleaseRecordsError("");
+    try {
+      const data = await api<{ record: ReleaseRecord }>(
+        `${projectApiPath(selectedFolder)}/release-records/${recordId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input),
+        },
+      );
+      setReleaseRecords((current) =>
+        current.map((record) => (record.id === recordId ? data.record : record)),
+      );
+    } catch (error) {
+      setReleaseRecordsError((error as Error).message);
+    } finally {
+      setReleaseRecordsSaving(false);
+    }
+  }
+
+  async function deleteReleaseRecord(recordId: string) {
+    if (!selectedFolder) {
+      return;
+    }
+    if (!confirm("Delete this release record?")) {
+      return;
+    }
+    setReleaseRecordsSaving(true);
+    setReleaseRecordsError("");
+    try {
+      await api(
+        `${projectApiPath(selectedFolder)}/release-records/${recordId}`,
+        { method: "DELETE" },
+      );
+      setReleaseRecords((current) =>
+        current.filter((record) => record.id !== recordId),
+      );
+      showToast("Release record deleted.");
+    } catch (error) {
+      setReleaseRecordsError((error as Error).message);
+    } finally {
+      setReleaseRecordsSaving(false);
+    }
+  }
+
+  function closeReleaseRecords() {
+    setReleaseModel("");
+    setReleaseRecords([]);
+    setReleaseRecordsError("");
   }
 
   async function updateOverviewRequirement(
@@ -1351,6 +1484,7 @@ export default function ProjectsWorkspace() {
                 }}
                 mode={projectMode}
                 onModeChange={switchProjectMode}
+                onOpenReleaseRecords={() => setShowReleaseModelPicker(true)}
               />
               {projectMode === "overview" ? (
                 <OverviewWorkspace
@@ -1589,6 +1723,28 @@ export default function ProjectsWorkspace() {
           saving={saving}
           onClose={() => setShowNewOverviewRequirement(false)}
           onCreate={createOverviewRequirement}
+        />
+      ) : null}
+
+      {showReleaseModelPicker ? (
+        <ReleaseModelPickerDialog
+          models={overview.models}
+          onClose={() => setShowReleaseModelPicker(false)}
+          onSelect={(model) => void openReleaseRecords(model)}
+        />
+      ) : null}
+
+      {releaseModel ? (
+        <ReleaseRecordsDialog
+          model={releaseModel}
+          records={releaseRecords}
+          loading={releaseRecordsLoading}
+          saving={releaseRecordsSaving}
+          error={releaseRecordsError}
+          onClose={closeReleaseRecords}
+          onAdd={createReleaseRecord}
+          onUpdate={updateReleaseRecord}
+          onDelete={deleteReleaseRecord}
         />
       ) : null}
 
