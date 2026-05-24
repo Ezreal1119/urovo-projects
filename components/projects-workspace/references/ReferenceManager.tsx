@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ProjectReference, ReferenceBrowseEntry } from "../types";
 import { api } from "../api-client";
 import { formatBytes, formatDateTimeFull, parentReferencePath } from "../formatters";
@@ -112,6 +112,20 @@ export function ReferencePickerDialog({
   const [missingDocs, setMissingDocs] = useState(false);
   const [error, setError] = useState("");
   const [addingPath, setAddingPath] = useState("");
+  const [query, setQuery] = useState("");
+  const filteredEntries = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return entries;
+    }
+
+    return entries.filter((entry) =>
+      [entry.name, entry.path, entry.kind]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+  }, [entries, query]);
 
   useEffect(() => {
     let active = true;
@@ -194,6 +208,15 @@ export function ReferencePickerDialog({
             <EmptyState text="No docs folder was found for this project." />
           ) : (
             <div className="space-y-2">
+              <label className="mb-3 block">
+                <span className="sr-only">Search references</span>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white"
+                  placeholder="Search references by name or path"
+                />
+              </label>
               {currentPath !== "docs" ? (
                 <button
                   type="button"
@@ -217,7 +240,10 @@ export function ReferencePickerDialog({
               {entries.length === 0 ? (
                 <EmptyState text="No files found in this docs folder." />
               ) : null}
-              {entries.map((entry) => (
+              {entries.length > 0 && filteredEntries.length === 0 ? (
+                <EmptyState text="No references match this search." />
+              ) : null}
+              {filteredEntries.map((entry) => (
                 <div
                   key={entry.path}
                   className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
