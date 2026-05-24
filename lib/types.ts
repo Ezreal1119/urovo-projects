@@ -113,6 +113,33 @@ export type Overview = {
 export type OverviewInput = Partial<Omit<Overview, "requirements">>;
 export type OverviewRequirementInput = Partial<Omit<OverviewRequirement, "id" | "uuid" | "created_at">>;
 
+export type ReleaseFirmware = {
+  os: string;
+  ufs: string;
+  se: string;
+};
+
+export type ReleaseRecord = {
+  id: string;
+  model: string;
+  firmware: ReleaseFirmware;
+  change_log: string;
+  release_date: string | null;
+  order_count: number | null;
+  order_time: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReleaseRecordInput = Partial<
+  Omit<ReleaseRecord, "id" | "created_at" | "updated_at">
+>;
+
+export type ReleaseRecordFile = {
+  version: 1;
+  records: ReleaseRecord[];
+};
+
 export type ChangeLogEntityType = "demand" | "ticket" | "requirement" | "project";
 
 export type ChangeLogAction =
