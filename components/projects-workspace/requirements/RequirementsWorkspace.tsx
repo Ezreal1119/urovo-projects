@@ -202,7 +202,7 @@ export function RequirementDrawer({
 
   return (
     <div className="fixed inset-0 z-30 flex justify-end bg-slate-950/20">
-      <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+      <aside className="flex h-full w-full max-w-2xl flex-col overflow-y-auto overflow-x-hidden border-l border-slate-200 bg-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white p-5">
           <div>
             <div className="text-xs font-medium text-slate-500">
@@ -228,7 +228,7 @@ export function RequirementDrawer({
           </div>
         </div>
 
-        <div className="space-y-6 p-5">
+        <div className="min-w-0 space-y-6 p-5">
           <RequirementForm
             key={requirement.id}
             formId={formId}
@@ -647,13 +647,13 @@ export function RequirementTimelineItemView({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="text-xs font-medium text-slate-500">
             {formatDateOnly(item.time)}
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+          <p className="mt-2 max-w-full whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]">
             {item.remark || "-"}
           </p>
         </div>
