@@ -6,6 +6,7 @@ import {
   readRequirements,
   readTickets,
 } from "@/lib/projects";
+import { readReleaseRecords } from "@/lib/release-records";
 
 type PublicPreviewPageProps = {
   searchParams: Promise<{
@@ -34,10 +35,11 @@ export default async function PublicPreviewPage({
     notFound();
   }
 
-  const [overview, requirements, tickets] = await Promise.all([
+  const [overview, requirements, tickets, releaseRecords] = await Promise.all([
     readOverview(item.folder),
     readRequirements(item.folder),
     readTickets(item.folder),
+    readReleaseRecords(item.folder),
   ]);
 
   return (
@@ -46,6 +48,7 @@ export default async function PublicPreviewPage({
       overview={overview}
       requirements={requirements}
       tickets={tickets}
+      releaseRecords={releaseRecords}
     />
   );
 }
