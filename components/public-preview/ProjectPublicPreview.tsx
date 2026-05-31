@@ -13,12 +13,6 @@ import type {
   TicketStatus,
 } from "@/lib/types";
 import {
-  buildProjectSummary,
-  copyTextToClipboard,
-  downloadSummaryMarkdownAsPng,
-  latestRequirementTimelineItem,
-  latestTicketEvent,
-  projectSummaryPngFilename,
   sortOverviewDemandsForSummary,
   stripBracketMetadata,
 } from "@/components/projects-workspace/summary";
@@ -34,12 +28,9 @@ import {
   formatDateTimeFull,
 } from "@/components/projects-workspace/formatters";
 import {
-  PriorityBadge,
   RequirementStatusBadge,
-  StatusBadge,
 } from "@/components/projects-workspace/ui";
 import {
-  hasDisplayableTicketEventSummaries,
   TicketEventSummaryCard,
   ticketEventSummaryForTicket,
 } from "@/components/projects-workspace/tickets/TicketEventSummaries";
@@ -98,14 +89,9 @@ export default function ProjectPublicPreview({
 }) {
   const [tab, setTab] = useState<PreviewTab>("overview");
   const [query, setQuery] = useState("");
-  const [aiEnhancedTickets, setAiEnhancedTickets] = useState(true);
   const [ticketFilter, setTicketFilter] = useState<TicketPreviewFilter>("all");
   const [requirementFilter, setRequirementFilter] =
     useState<RequirementPreviewFilter>("all");
-  const summary = useMemo(
-    () => buildProjectSummary(project, overview, requirements, tickets),
-    [overview, project, requirements, tickets],
-  );
   const filteredDemands = useMemo(
     () => filterPreviewDemands(overview, requirements, query),
     [overview, requirements, query],
@@ -144,9 +130,6 @@ export default function ProjectPublicPreview({
                 Public project preview
               </div>
             </div>
-          </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <SummaryActions project={project} summary={summary} />
           </div>
         </div>
       </header>
@@ -201,8 +184,6 @@ export default function ProjectPublicPreview({
             totalTickets={tickets.length}
             filtering={query.trim().length > 0 || ticketFilter !== "all"}
             ticketEventSummaries={ticketEventSummaries}
-            aiEnhanced={aiEnhancedTickets}
-            onAiEnhancedChange={setAiEnhancedTickets}
           />
         ) : (
           <RequirementsPreview
@@ -214,53 +195,6 @@ export default function ProjectPublicPreview({
         )}
       </div>
     </main>
-  );
-}
-
-function SummaryActions({
-  project,
-  summary,
-}: {
-  project: ProjectInfo;
-  summary: string;
-}) {
-  const [message, setMessage] = useState("");
-
-  async function copySummary() {
-    const didCopy = await copyTextToClipboard(summary);
-    setMessage(didCopy ? "Copied Markdown." : "Copy failed.");
-    window.setTimeout(() => setMessage(""), 1800);
-  }
-
-  function downloadPng() {
-    const didDownload = downloadSummaryMarkdownAsPng(
-      summary,
-      projectSummaryPngFilename(project.project_name),
-    );
-    setMessage(didDownload ? "PNG downloaded." : "PNG download failed.");
-    window.setTimeout(() => setMessage(""), 1800);
-  }
-
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <button
-        type="button"
-        onClick={() => void copySummary()}
-        className="h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
-      >
-        Copy Markdown
-      </button>
-      <button
-        type="button"
-        onClick={downloadPng}
-        className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
-      >
-        Download Summary PNG
-      </button>
-      <span className="min-w-28 text-sm font-medium text-slate-500">
-        {message}
-      </span>
-    </div>
   );
 }
 
@@ -613,34 +547,21 @@ function TicketsPreview({
   totalTickets,
   filtering,
   ticketEventSummaries,
-  aiEnhanced,
-  onAiEnhancedChange,
 }: {
   tickets: Ticket[];
   totalTickets: number;
   filtering: boolean;
   ticketEventSummaries: TicketEventSummariesFile;
-  aiEnhanced: boolean;
-  onAiEnhancedChange: (enabled: boolean) => void;
 }) {
   return (
     <section className="mt-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-900">Tickets</h2>
-          <span className="text-xs text-slate-500">
-            {visibleCountText(tickets.length, totalTickets)}
-          </span>
-        </div>
-        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
-          <input
-            type="checkbox"
-            checked={aiEnhanced}
-            onChange={(event) => onAiEnhancedChange(event.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          <span>AI Enhanced</span>
-        </label>
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-slate-900">
+          Ticket Dashboard
+        </h2>
+        <span className="text-xs text-slate-500">
+          {visibleCountText(tickets.length, totalTickets)}
+        </span>
       </div>
       <div className="space-y-3">
         {tickets.map((ticket) => {
@@ -648,62 +569,13 @@ function TicketsPreview({
             ticketEventSummaries,
             ticket,
           );
-          const showAiCard =
-            aiEnhanced &&
-            hasDisplayableTicketEventSummaries(ticket, summaryTicket);
-          if (showAiCard) {
-            return (
-              <TicketEventSummaryCard
-                key={ticket.id}
-                ticket={ticket}
-                summaryTicket={summaryTicket}
-              />
-            );
-          }
-
-          const latestEvent = latestTicketEvent(ticket.events);
           return (
-            <article
+            <TicketEventSummaryCard
               key={ticket.id}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="line-clamp-2 text-base font-semibold leading-6 text-slate-950">
-                  <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
-                    {ticket.id}
-                  </span>
-                  {ticket.title}
-                </h3>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                  <StatusBadge status={ticket.status} />
-                  <PriorityBadge priority={ticket.priority} />
-                </div>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                {ticket.summary || "No summary."}
-              </p>
-              {ticket.next_action ? (
-                <div className="mt-3 rounded-lg bg-slate-50 p-3">
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                    Next action
-                  </div>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {ticket.next_action}
-                  </p>
-                </div>
-              ) : null}
-              {latestEvent ? (
-                <ProgressBlock
-                  title={`Latest progress (${eventRoleLabels[latestEvent.role]})`}
-                  time={latestEvent.time}
-                  content={latestEvent.content}
-                />
-              ) : null}
-              <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-                <span>Updated {formatDateTimeFull(ticket.updated_at)}</span>
-                <span>{ticket.events.length} events</span>
-              </div>
-            </article>
+              ticket={ticket}
+              summaryTicket={summaryTicket}
+              showEmptySummaries
+            />
           );
         })}
         {tickets.length === 0 ? (
@@ -742,73 +614,61 @@ function RequirementsPreview({
         </span>
       </div>
       <div className="space-y-3">
-        {requirements.map((requirement) => {
-          const latestTimelineItem = latestRequirementTimelineItem(
-            requirement.timeline,
-          );
-          return (
-            <article
-              key={requirement.id}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="line-clamp-2 text-base font-semibold leading-6 text-slate-950">
-                  <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
-                    {requirement.id}
-                  </span>
-                  {requirement.title}
-                </h3>
-                <RequirementStatusBadge status={requirement.status} />
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                {requirement.details || "No details."}
-              </p>
-              {requirement.related_tickets.length > 0 ? (
-                <div className="mt-3 rounded-lg bg-slate-50 p-3">
-                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                    Related tickets
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    {requirement.related_tickets.map((ticketId) => {
-                      const ticket = ticketMap.get(ticketId);
-                      return (
-                        <div
-                          key={ticketId}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm ring-1 ring-slate-200"
-                        >
-                          <span className="font-medium text-slate-700">
-                            {ticket
-                              ? `[${ticket.id}] ${ticket.title}`
-                              : ticketId}
-                          </span>
-                          {ticket ? (
-                            <span className="text-xs text-slate-500">
-                              {statusLabels[ticket.status]} |{" "}
-                              {priorityLabels[ticket.priority]}
-                            </span>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              {latestTimelineItem ? (
-                <ProgressBlock
-                  title="Latest progress"
-                  time={latestTimelineItem.time}
-                  content={latestTimelineItem.remark}
-                />
-              ) : null}
-              <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-                <span>
-                  Updated {formatDateTimeFull(requirement.last_updated)}
+        {requirements.map((requirement) => (
+          <article
+            key={requirement.id}
+            className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="line-clamp-2 text-base font-semibold leading-6 text-slate-950">
+                <span className="mr-2 inline-flex rounded-md bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">
+                  {requirement.id}
                 </span>
-                <span>{requirement.timeline.length} updates</span>
+                {requirement.title}
+              </h3>
+              <RequirementStatusBadge status={requirement.status} />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              {requirement.details || "No details."}
+            </p>
+            {requirement.related_tickets.length > 0 ? (
+              <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                  Related tickets
+                </div>
+                <div className="mt-2 space-y-2">
+                  {requirement.related_tickets.map((ticketId) => {
+                    const ticket = ticketMap.get(ticketId);
+                    return (
+                      <div
+                        key={ticketId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm ring-1 ring-slate-200"
+                      >
+                        <span className="font-medium text-slate-700">
+                          {ticket
+                            ? `[${ticket.id}] ${ticket.title}`
+                            : ticketId}
+                        </span>
+                        {ticket ? (
+                          <span className="text-xs text-slate-500">
+                            {statusLabels[ticket.status]} |{" "}
+                            {priorityLabels[ticket.priority]}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </article>
-          );
-        })}
+            ) : null}
+            <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+              <span>
+                Updated {formatDateTimeFull(requirement.last_updated)}
+              </span>
+              <span>{requirement.timeline.length} updates</span>
+            </div>
+          </article>
+        ))}
         {requirements.length === 0 ? (
           <EmptyPreview
             text={
@@ -820,27 +680,6 @@ function RequirementsPreview({
         ) : null}
       </div>
     </section>
-  );
-}
-
-function ProgressBlock({
-  title,
-  time,
-  content,
-}: {
-  title: string;
-  time: string;
-  content: string;
-}) {
-  return (
-    <div className="mt-3 rounded-lg bg-slate-950 p-4 text-slate-50">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-300">
-        {title} - {formatDateOnly(time)}
-      </div>
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-        {content || "-"}
-      </p>
-    </div>
   );
 }
 

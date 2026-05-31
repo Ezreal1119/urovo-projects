@@ -6,7 +6,7 @@ import type {
   TicketEventSummaryTicket,
   TimelineEvent,
 } from "@/lib/types";
-import { eventRoleLabels } from "../labels";
+import { eventRoleLabels, eventRoleStyles } from "../labels";
 import { formatDateOnly, formatDateTimeFull } from "../formatters";
 import { Overlay, PriorityBadge, StatusBadge } from "../ui";
 
@@ -45,6 +45,7 @@ export function TicketEventSummaryCard({
   onStartNextActionEdit,
   onNextActionDraftChange,
   onSaveNextAction,
+  showEmptySummaries = false,
 }: {
   ticket: Ticket;
   summaryTicket: TicketEventSummaryTicket | undefined;
@@ -57,10 +58,11 @@ export function TicketEventSummaryCard({
   onStartNextActionEdit?: () => void;
   onNextActionDraftChange?: (value: string) => void;
   onSaveNextAction?: () => void;
+  showEmptySummaries?: boolean;
 }) {
   const summaries = displaySummaries(ticket, summaryTicket);
   const [showSummaries, setShowSummaries] = useState(false);
-  if (summaries.length === 0 && !onPolish) {
+  if (summaries.length === 0 && !onPolish && !showEmptySummaries) {
     return null;
   }
 
@@ -300,7 +302,9 @@ function RawEventRow({ event }: { event: TimelineEvent }) {
   return (
     <div className="rounded-md border border-slate-100 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+        <span
+          className={`rounded-md px-2 py-1 text-xs font-medium ring-1 ${eventRoleStyles[event.role]}`}
+        >
           {eventRoleLabels[event.role]}
         </span>
         <span className="text-xs text-slate-500">
