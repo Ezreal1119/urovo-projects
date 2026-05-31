@@ -122,13 +122,29 @@ export default function ProjectPublicPreview({
       filterPreviewRequirements(requirements, tickets, requirementFilter, query),
     [requirements, tickets, requirementFilter, query],
   );
+  const openRequirement = (requirement: Requirement) => {
+    setTab("requirements");
+    setRequirementFilter("all");
+    setQuery(searchTextForTitle(requirement.title));
+  };
+  const openTicket = (ticket: Ticket) => {
+    setTab("tickets");
+    setTicketFilter("all");
+    setQuery(searchTextForTitle(ticket.title));
+  };
+  const handleTabChange = (nextTab: PreviewTab) => {
+    if (nextTab !== tab) {
+      setQuery("");
+    }
+    setTab(nextTab);
+  };
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#edf7f6_44%,#f7f7fb_100%)] text-slate-950">
       <header className="sticky top-0 z-20 border-b border-white/70 bg-white/75 shadow-sm shadow-slate-200/70 backdrop-blur-xl">
         <div className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2 lg:px-6">
           <BrandLockup />
-          <TabSwitcher tab={tab} onChange={setTab} />
+          <TabSwitcher tab={tab} onChange={handleTabChange} />
         </div>
       </header>
 
@@ -163,13 +179,13 @@ export default function ProjectPublicPreview({
                 </div>
               </div>
             </div>
-            <div className="hidden border-l border-white/80 bg-slate-950 p-5 text-white shadow-inner shadow-black/20 lg:block">
-              <div className="h-full rounded-lg border border-white/10 bg-white/10 p-4 backdrop-blur">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
+            <div className="hidden border-l border-white/80 bg-[linear-gradient(135deg,#f8fafc_0%,#ecfeff_58%,#dff7f3_100%)] p-5 shadow-inner shadow-cyan-100/70 lg:block">
+              <div className="h-full rounded-lg border border-white/80 bg-white/55 p-4 shadow-sm shadow-cyan-100/70 ring-1 ring-cyan-900/[0.04] backdrop-blur">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">
                   Public project preview
                 </div>
-                <div className="mt-3 h-px bg-gradient-to-r from-cyan-300 via-emerald-300 to-transparent" />
-                <div className="mt-4 text-sm leading-6 text-slate-200">
+                <div className="mt-3 h-px bg-gradient-to-r from-cyan-400 via-emerald-300 to-transparent" />
+                <div className="mt-4 text-sm leading-6 text-slate-700">
                   {project.project_name}
                 </div>
               </div>
@@ -193,6 +209,7 @@ export default function ProjectPublicPreview({
             demands={filteredDemands}
             totalDemands={overview.requirements.length}
             searching={query.trim().length > 0}
+            onOpenRequirement={openRequirement}
           />
         ) : tab === "release" ? (
           <ReleaseRecordsPreview
@@ -213,6 +230,7 @@ export default function ProjectPublicPreview({
             totalRequirements={requirements.length}
             tickets={tickets}
             filtering={query.trim().length > 0 || requirementFilter !== "all"}
+            onOpenTicket={openTicket}
           />
         )}
       </div>
@@ -299,7 +317,7 @@ function PreviewFilterBar({
             <input
               value={query}
               onChange={(event) => onQueryChange(event.target.value)}
-              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-4 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-10 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
               placeholder={
                 tab === "overview"
                   ? "Search demands"
@@ -310,6 +328,16 @@ function PreviewFilterBar({
                       : "Search requirements"
               }
             />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => onQueryChange("")}
+                className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                aria-label="Clear search"
+              >
+                x
+              </button>
+            ) : null}
           </div>
         </label>
         {tab === "tickets" ? (
@@ -365,12 +393,14 @@ function OverviewPreview({
   demands,
   totalDemands,
   searching,
+  onOpenRequirement,
 }: {
   overview: Overview;
   requirements: Requirement[];
   demands: Overview["requirements"];
   totalDemands: number;
   searching: boolean;
+  onOpenRequirement: (requirement: Requirement) => void;
 }) {
   const requirementMap = new Map(
     requirements.map((requirement) => [requirement.id, requirement]),
@@ -431,21 +461,32 @@ function OverviewPreview({
                 <div className="mt-3 space-y-2 border-l-2 border-cyan-200 pl-3">
                   {demand.linked_requirements.map((requirementId) => {
                     const requirement = requirementMap.get(requirementId);
+                    if (!requirement) {
+                      return (
+                        <div
+                          key={requirementId}
+                          className="relative flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-100 bg-cyan-50/60 px-3 py-2 text-sm shadow-sm shadow-cyan-100/60"
+                        >
+                          <span className="absolute -left-[17px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-cyan-400 ring-4 ring-white" />
+                          <span className="min-w-0 break-words font-medium text-slate-700 [overflow-wrap:anywhere]">
+                            {requirementId}
+                          </span>
+                        </div>
+                      );
+                    }
                     return (
-                      <div
+                      <button
                         key={requirementId}
-                        className="relative flex flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-100 bg-cyan-50/60 px-3 py-2 text-sm shadow-sm shadow-cyan-100/60"
+                        type="button"
+                        onClick={() => onOpenRequirement(requirement)}
+                        className="relative flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-cyan-100 bg-cyan-50/60 px-3 py-2 text-left text-sm shadow-sm shadow-cyan-100/60 transition hover:-translate-y-0.5 hover:border-cyan-300 hover:bg-white hover:shadow-md hover:shadow-cyan-100 focus:outline-none focus:ring-4 focus:ring-cyan-100"
                       >
-                        <span className="absolute -left-[17px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-cyan-400 ring-4 ring-white" />
+                        <span className="absolute -left-[17px] top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-cyan-400 ring-4 ring-white transition group-hover:bg-cyan-500" />
                         <span className="min-w-0 break-words font-medium text-slate-700 [overflow-wrap:anywhere]">
-                          {requirement
-                            ? `[${requirement.id}] ${requirement.title}`
-                            : requirementId}
+                          {requirement.title}
                         </span>
-                        {requirement ? (
-                          <RequirementStatusPill status={requirement.status} />
-                        ) : null}
-                      </div>
+                        <RequirementStatusPill status={requirement.status} />
+                      </button>
                     );
                   })}
                 </div>
@@ -762,13 +803,25 @@ function PublicEventSummaryDialog({
           </button>
         </div>
         <div className="overflow-y-auto p-5">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search event summaries"
-            className="mb-4 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
-          />
+          <div className="relative mb-4">
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search event summaries"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pr-10 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                aria-label="Clear event summary search"
+              >
+                x
+              </button>
+            ) : null}
+          </div>
           <div className="space-y-3">
             {filteredSummaries.map(({ summary, events }) => (
               <section
@@ -836,11 +889,13 @@ function RequirementsPreview({
   totalRequirements,
   tickets,
   filtering,
+  onOpenTicket,
 }: {
   requirements: Requirement[];
   totalRequirements: number;
   tickets: Ticket[];
   filtering: boolean;
+  onOpenTicket: (ticket: Ticket) => void;
 }) {
   const ticketMap = new Map(tickets.map((ticket) => [ticket.id, ticket]));
 
@@ -876,23 +931,33 @@ function RequirementsPreview({
                 <div className="mt-2 space-y-2">
                   {requirement.related_tickets.map((ticketId) => {
                     const ticket = ticketMap.get(ticketId);
+                    if (!ticket) {
+                      return (
+                        <div
+                          key={ticketId}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white bg-white px-3 py-2 text-sm shadow-sm shadow-cyan-100/60"
+                        >
+                          <span className="min-w-0 break-words font-medium text-slate-700 [overflow-wrap:anywhere]">
+                            {ticketId}
+                          </span>
+                        </div>
+                      );
+                    }
                     return (
-                      <div
+                      <button
                         key={ticketId}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white bg-white px-3 py-2 text-sm shadow-sm shadow-cyan-100/60"
+                        type="button"
+                        onClick={() => onOpenTicket(ticket)}
+                        className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-white bg-white px-3 py-2 text-left text-sm shadow-sm shadow-cyan-100/60 transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-md hover:shadow-cyan-100 focus:outline-none focus:ring-4 focus:ring-cyan-100"
                       >
                         <span className="min-w-0 break-words font-medium text-slate-700 [overflow-wrap:anywhere]">
-                          {ticket
-                            ? `[${ticket.id}] ${ticket.title}`
-                            : ticketId}
+                          {ticket.title}
                         </span>
-                        {ticket ? (
-                          <span className="flex shrink-0 flex-wrap items-center gap-1">
-                            <TicketStatusPill status={ticket.status} />
-                            <PriorityPill priority={ticket.priority} />
-                          </span>
-                        ) : null}
-                      </div>
+                        <span className="flex shrink-0 flex-wrap items-center gap-1">
+                          <TicketStatusPill status={ticket.status} />
+                          <PriorityPill priority={ticket.priority} />
+                        </span>
+                      </button>
                     );
                   })}
                 </div>
@@ -1318,6 +1383,10 @@ function includesQuery(values: string[], normalizedQuery: string) {
 
 function normalizeQuery(query: string) {
   return query.trim().toLowerCase();
+}
+
+function searchTextForTitle(title: string) {
+  return stripBracketMetadata(title).trim() || title;
 }
 
 function visibleCountText(visible: number, total: number) {
