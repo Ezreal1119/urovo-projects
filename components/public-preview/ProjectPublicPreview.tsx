@@ -639,16 +639,8 @@ function TicketsPreview({
             onChange={(event) => onAiEnhancedChange(event.target.checked)}
             className="h-4 w-4 rounded border-slate-300"
           />
-          <span>AI Enhanced View [{aiEnhanced ? "on" : "off"}]</span>
+          <span>AI Enhanced</span>
         </label>
-      </div>
-      <div className="mb-3 flex items-center justify-end">
-        <span className="text-xs text-slate-500">
-          Last AI Polish:{" "}
-          {ticketEventSummaries.last_polished_at
-            ? formatDateTimeFull(ticketEventSummaries.last_polished_at)
-            : "Never"}
-        </span>
       </div>
       <div className="space-y-3">
         {tickets.map((ticket) => {

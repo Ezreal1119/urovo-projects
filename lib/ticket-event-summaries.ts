@@ -53,6 +53,7 @@ export async function polishTicketEventSummaries(
   const project = await readProject(key);
   const { tickets } = await backfillProjectUuids(key);
   const previousSummaries = await readTicketEventSummaries(key);
+  const polishedAt = beijingNowIsoString();
   const rawSummaries = await requestDeepSeekTicketEventSummaries({
     project,
     tickets: tickets.map(compactTicketForAi),
@@ -60,11 +61,58 @@ export async function polishTicketEventSummaries(
   });
   const summaries: TicketEventSummariesFile = {
     version: TICKET_EVENT_SUMMARIES_VERSION,
-    last_polished_at: beijingNowIsoString(),
+    last_polished_at: polishedAt,
     tickets: validateAiTicketEventSummaries(
       rawSummaries,
       tickets,
       previousSummaries,
+      polishedAt,
+    ),
+  };
+
+  await writeTicketEventSummaries(key, summaries);
+  return { tickets, summaries };
+}
+
+export async function polishSingleTicketEventSummaries(
+  key: string,
+  ticketId: string,
+): Promise<PolishResult> {
+  const project = await readProject(key);
+  const { tickets } = await backfillProjectUuids(key);
+  const ticket = tickets.find((current) => current.id === ticketId);
+  if (!ticket) {
+    throw new TicketEventSummaryNotFoundError("Ticket not found.");
+  }
+
+  const previousSummaries = await readTicketEventSummaries(key);
+  const polishedAt = beijingNowIsoString();
+  const previousTicketSummaries = {
+    ...previousSummaries,
+    tickets: previousSummaries.tickets.filter(
+      (current) =>
+        (ticket.uuid && current.ticket_uuid === ticket.uuid) ||
+        current.ticket_id === ticket.id,
+    ),
+  };
+  const rawSummaries = await requestDeepSeekTicketEventSummaries({
+    project,
+    tickets: [compactTicketForAi(ticket)],
+    previous_summaries: previousTicketSummaries.tickets,
+  });
+  const nextTicketSummaries = validateAiTicketEventSummaries(
+    rawSummaries,
+    [ticket],
+    previousTicketSummaries,
+    polishedAt,
+  );
+  const summaries: TicketEventSummariesFile = {
+    version: TICKET_EVENT_SUMMARIES_VERSION,
+    last_polished_at: polishedAt,
+    tickets: mergeTicketSummaries(
+      previousSummaries,
+      ticket,
+      nextTicketSummaries[0],
     ),
   };
 
@@ -78,6 +126,21 @@ function emptyTicketEventSummaries(): TicketEventSummariesFile {
     last_polished_at: "",
     tickets: [],
   };
+}
+
+function mergeTicketSummaries(
+  previousSummaries: TicketEventSummariesFile,
+  ticket: Ticket,
+  nextTicketSummary: TicketEventSummaryTicket | undefined,
+) {
+  const nextTickets = previousSummaries.tickets.filter(
+    (current) =>
+      !(
+        (ticket.uuid && current.ticket_uuid === ticket.uuid) ||
+        current.ticket_id === ticket.id
+      ),
+  );
+  return nextTicketSummary ? [...nextTickets, nextTicketSummary] : nextTickets;
 }
 
 async function writeTicketEventSummaries(
@@ -145,6 +208,7 @@ function validateAiTicketEventSummaries(
   raw: RawAiTicketEventSummaries,
   tickets: Ticket[],
   previousSummaries: TicketEventSummariesFile,
+  polishedAt: string,
 ): TicketEventSummaryTicket[] {
   if (!Array.isArray(raw.tickets)) {
     throw new Error("AI Polish JSON must include a tickets array.");
@@ -211,6 +275,7 @@ function validateAiTicketEventSummaries(
       nextTickets.push({
         ticket_uuid: ticketUuid,
         ticket_id: ticket.id,
+        last_polished_at: polishedAt,
         summaries,
       });
     }
@@ -339,6 +404,7 @@ function normalizeStoredTicketSummary(raw: unknown): TicketEventSummaryTicket | 
   return {
     ticket_uuid: ticketUuid,
     ticket_id: ticketId,
+    last_polished_at: cleanText(raw.last_polished_at),
     summaries,
   };
 }
@@ -426,13 +492,23 @@ The JSON object must have this shape:
 
 Rules:
 - Use only the provided JSON data. Do not invent project facts, causes, owners, decisions, dates, or progress.
+- Write English only, with an internal management-facing support tone.
+- Mention the actor/source when useful, such as "Customer reported", "Support confirmed", or "Internal testing found".
 - Each current event_uuid must appear exactly once in the summaries for the same ticket.
 - Do not reference event UUIDs or ticket UUIDs that are not provided.
 - Do not include summary UUIDs. The application assigns and preserves summary UUIDs after validation.
 - Preserve previous wording when the related event group still represents the same meaning.
 - Update wording only when new or changed raw events materially change the meaning.
 - Remove summaries whose related events no longer exist.
-- Keep each message brief, polished, and management-readable.
+- Keep each message brief, polished, and management-readable, but do not force an unnatural template.
+- Translate or summarize Chinese and raw copied language into clear English.
 - Do not copy raw messages verbatim. Abstract noisy chat text into clear business English.
-- Avoid exposing credentials, keys, private server details, or long raw technical dumps in the summary message.
+- Avoid exposing credentials, SSH keys, private server details, and long technical dumps unless the detail is essential to understanding the support status.
 `;
+
+export class TicketEventSummaryNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TicketEventSummaryNotFoundError";
+  }
+}

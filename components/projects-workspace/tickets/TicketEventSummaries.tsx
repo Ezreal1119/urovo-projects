@@ -37,16 +37,20 @@ export function TicketEventSummaryCard({
   ticket,
   summaryTicket,
   active = false,
+  polishing = false,
   onClick,
+  onPolish,
 }: {
   ticket: Ticket;
   summaryTicket: TicketEventSummaryTicket | undefined;
   active?: boolean;
+  polishing?: boolean;
   onClick?: () => void;
+  onPolish?: () => void;
 }) {
   const summaries = displaySummaries(ticket, summaryTicket);
   const [showSummaries, setShowSummaries] = useState(false);
-  if (summaries.length === 0) {
+  if (summaries.length === 0 && !onPolish) {
     return null;
   }
 
@@ -96,16 +100,32 @@ export function TicketEventSummaryCard({
               {ticket.events.length === 1 ? "event" : "events"}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setShowSummaries(true);
-            }}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950"
-          >
-            Event Summary
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {onPolish ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onPolish();
+                }}
+                disabled={polishing}
+                className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {polishing ? "Polishing..." : "AI Polish"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setShowSummaries(true);
+              }}
+              disabled={summaries.length === 0}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Event Summary
+            </button>
+          </div>
         </div>
 
         {ticket.next_action ? (
@@ -119,8 +139,13 @@ export function TicketEventSummaryCard({
           </div>
         ) : null}
 
-        <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-          <span>Updated {formatDateTimeFull(ticket.updated_at)}</span>
+        <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>
+            Updated {formatDateTimeFull(ticket.updated_at)}
+            {summaryTicket?.last_polished_at ? (
+              <> | AI polished {formatDateTimeFull(summaryTicket.last_polished_at)}</>
+            ) : null}
+          </span>
           <span>{ticket.events.length} events</span>
         </div>
       </article>

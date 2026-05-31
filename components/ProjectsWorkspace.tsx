@@ -8,7 +8,7 @@ import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/cons
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
 import { emptyOverview, eventDraftForApi, overviewRequirementDraftForApi, requirementDraftForApi, requirementTimelineDraftForApi, ticketToDraft } from "./projects-workspace/drafts";
-import { createUuid, formatDateTimeFull } from "./projects-workspace/formatters";
+import { createUuid } from "./projects-workspace/formatters";
 import { requirementStatusLabels, dashboardModeLabel, projectModeLabel } from "./projects-workspace/labels";
 import { readRecentProjects } from "./projects-workspace/recent-projects";
 import { buildProjectSummary } from "./projects-workspace/summary";
@@ -17,7 +17,7 @@ import { ProjectHeader, OverviewRequirementDrawer, OverviewRequirementModal, Ove
 import { ReleaseModelPickerDialog, ReleaseRecordsDialog } from "./projects-workspace/overview/ReleaseRecordsDialog";
 import { RequirementDrawer, RequirementModal, RequirementsWorkspace } from "./projects-workspace/requirements/RequirementsWorkspace";
 import { TicketCard, TicketDrawer, TicketModal } from "./projects-workspace/tickets/TicketsWorkspace";
-import { hasDisplayableTicketEventSummaries, TicketEventSummaryCard, ticketEventSummaryForTicket } from "./projects-workspace/tickets/TicketEventSummaries";
+import { TicketEventSummaryCard, ticketEventSummaryForTicket } from "./projects-workspace/tickets/TicketEventSummaries";
 import { ProjectTreeGroup } from "./projects-workspace/sidebar/ProjectTreeGroup";
 import { Metric, Toast, Pagination } from "./projects-workspace/ui";
 import { AiAnalysisDialog, GenerateReportDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
@@ -74,6 +74,7 @@ export default function ProjectsWorkspace() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ticketPolishing, setTicketPolishing] = useState(false);
+  const [polishingTicketId, setPolishingTicketId] = useState("");
   const [error, setError] = useState("");
   const [ticketEventSummariesError, setTicketEventSummariesError] =
     useState("");
@@ -657,6 +658,9 @@ export default function ProjectsWorkspace() {
     if (!selectedFolder) {
       return;
     }
+    if (!confirm("AI Polish all tickets for this project? This can take a while.")) {
+      return;
+    }
     setTicketPolishing(true);
     setTicketEventSummariesError("");
     try {
@@ -669,11 +673,38 @@ export default function ProjectsWorkspace() {
       setTickets(data.tickets);
       setTicketEventSummaries(data.summaries);
       refreshDashboardQuietly();
-      showToast("AI Polish finished.");
+      showToast("Batch AI Polish finished.");
     } catch (requestError) {
       setTicketEventSummariesError((requestError as Error).message);
+      showToast("Batch AI Polish failed.");
     } finally {
       setTicketPolishing(false);
+    }
+  }
+
+  async function polishSingleTicket(ticketId: string) {
+    if (!selectedFolder) {
+      return;
+    }
+    setPolishingTicketId(ticketId);
+    setTicketEventSummariesError("");
+    try {
+      const data = await api<{
+        tickets: Ticket[];
+        summaries: TicketEventSummariesFile;
+      }>(
+        `${projectApiPath(selectedFolder)}/ticket-event-summaries/${ticketId}`,
+        { method: "POST" },
+      );
+      setTickets(data.tickets);
+      setTicketEventSummaries(data.summaries);
+      refreshDashboardQuietly();
+      showToast(`AI Polish finished for ${ticketId}.`);
+    } catch (requestError) {
+      setTicketEventSummariesError((requestError as Error).message);
+      showToast(`AI Polish failed for ${ticketId}.`);
+    } finally {
+      setPolishingTicketId("");
     }
   }
 
@@ -1638,7 +1669,7 @@ export default function ProjectsWorkspace() {
                             className="h-4 w-4 rounded border-slate-300"
                           />
                           <span>
-                            AI Enhanced View [{aiEnhancedTickets ? "on" : "off"}]
+                            AI Enhanced
                           </span>
                         </label>
                         <button
@@ -1647,14 +1678,8 @@ export default function ProjectsWorkspace() {
                           disabled={saving || ticketPolishing}
                           className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          {ticketPolishing ? "Polishing..." : "AI Polish"}
+                          {ticketPolishing ? "Polishing..." : "Batch AI Polish"}
                         </button>
-                        <span className="text-xs text-slate-500">
-                          Last AI Polish:{" "}
-                          {ticketEventSummaries.last_polished_at
-                            ? formatDateTimeFull(ticketEventSummaries.last_polished_at)
-                            : "Never"}
-                        </span>
                       </div>
                     </div>
                     {ticketEventSummariesError ? (
@@ -1668,12 +1693,7 @@ export default function ProjectsWorkspace() {
                           ticketEventSummaries,
                           ticket,
                         );
-                        const showAiCard =
-                          aiEnhancedTickets &&
-                          hasDisplayableTicketEventSummaries(
-                            ticket,
-                            summaryTicket,
-                          );
+                        const showAiCard = aiEnhancedTickets;
 
                         return showAiCard ? (
                           <TicketEventSummaryCard
@@ -1681,7 +1701,9 @@ export default function ProjectsWorkspace() {
                             ticket={ticket}
                             summaryTicket={summaryTicket}
                             active={ticket.id === selectedTicketId}
+                            polishing={polishingTicketId === ticket.id}
                             onClick={() => selectTicket(ticket.id)}
+                            onPolish={() => void polishSingleTicket(ticket.id)}
                           />
                         ) : (
                           <TicketCard

@@ -159,6 +159,7 @@ export type TicketEventSummary = {
 export type TicketEventSummaryTicket = {
   ticket_uuid: string;
   ticket_id: string;
+  last_polished_at: string;
   summaries: TicketEventSummary[];
 };
 
