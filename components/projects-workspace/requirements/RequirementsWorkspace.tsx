@@ -561,12 +561,24 @@ export function RequirementForm({
                 Close
               </button>
             </div>
-            <input
-              value={ticketQuery}
-              onChange={(event) => setTicketQuery(event.target.value)}
-              className="mb-3 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-              placeholder="Search by ticket ID, title, status, or priority"
-            />
+            <div className="relative mb-3">
+              <input
+                value={ticketQuery}
+                onChange={(event) => setTicketQuery(event.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 pr-10 text-sm outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                placeholder="Search by ticket ID, title, status, or priority"
+              />
+              {ticketQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setTicketQuery("")}
+                  className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                  aria-label="Clear ticket search"
+                >
+                  x
+                </button>
+              ) : null}
+            </div>
             <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
               {selectableTickets.map((ticket) => {
                 const selected = draft.related_tickets.includes(ticket.id);
@@ -583,7 +595,7 @@ export function RequirementForm({
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selected
                         ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        : "border-slate-200 bg-white hover:border-cyan-200 hover:bg-cyan-50"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">

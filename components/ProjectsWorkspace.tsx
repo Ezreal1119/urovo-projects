@@ -1380,23 +1380,25 @@ export default function ProjectsWorkspace() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f7f8fb] text-slate-950">
-      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 shadow-sm shadow-slate-200/40 backdrop-blur">
+    <div className="flex min-h-screen flex-col bg-[linear-gradient(180deg,#f8fafc_0%,#edf7f6_42%,#f7f7fb_100%)] text-slate-950">
+      <header className="sticky top-0 z-20 border-b border-white/70 bg-white/80 shadow-sm shadow-slate-200/70 backdrop-blur-xl">
         <div className="flex min-h-16 items-center gap-3 px-4 py-2 lg:px-5">
           <button
             type="button"
             onClick={openDashboard}
-            className="group flex min-w-0 items-center gap-3 rounded-xl px-2 py-1.5 text-left transition hover:bg-slate-50"
+            className="group flex min-w-0 items-center gap-3 rounded-xl px-2 py-1.5 text-left transition hover:bg-cyan-50/70"
             aria-label="Open dashboard"
           >
-            <Image
-              src="/patrick.png"
-              alt="Urovo Projects"
-              width={44}
-              height={44}
-              className="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-200 transition group-hover:ring-slate-300"
-              priority
-            />
+            <div className="rounded-xl bg-gradient-to-br from-cyan-200 via-white to-emerald-200 p-px shadow-sm shadow-slate-200">
+              <Image
+                src="/patrick.png"
+                alt="Urovo Projects"
+                width={44}
+                height={44}
+                className="h-10 w-10 rounded-xl bg-white object-cover"
+                priority
+              />
+            </div>
             <div className="min-w-0">
               <div className="truncate text-base font-semibold tracking-tight text-slate-950">
                 Urovo Projects
@@ -1409,7 +1411,7 @@ export default function ProjectsWorkspace() {
             </div>
           </button>
 
-          <div className="hidden h-9 shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 lg:flex">
+          <div className="hidden h-9 shrink-0 items-center rounded-lg border border-cyan-100 bg-cyan-50/70 px-3 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-700 shadow-sm shadow-cyan-100/70 lg:flex">
             {viewMode === "dashboard"
               ? dashboardModeLabel(dashboardMode)
               : projectModeLabel(projectMode)}
@@ -1427,10 +1429,11 @@ export default function ProjectsWorkspace() {
                     ? "Search requirements"
                     : "Search tickets"}
             </span>
+            <span className="pointer-events-none absolute left-3 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan-400 to-emerald-400" />
             <input
               value={globalQuery}
               onChange={(event) => updateGlobalQuery(event.target.value)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white focus:shadow-sm"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-7 pr-10 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
               placeholder={
                 viewMode === "dashboard"
                   ? dashboardMode === "requirements"
@@ -1443,6 +1446,16 @@ export default function ProjectsWorkspace() {
                       : "Search tickets"
               }
             />
+            {globalQuery ? (
+              <button
+                type="button"
+                onClick={() => updateGlobalQuery("")}
+                className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                aria-label="Clear search"
+              >
+                x
+              </button>
+            ) : null}
           </label>
           {viewMode === "project" && selectedFolder ? (
             <div className="grid shrink-0 grid-cols-1 gap-2 sm:flex sm:items-center">
@@ -1454,7 +1467,7 @@ export default function ProjectsWorkspace() {
                       ? setShowNewRequirement(true)
                       : setShowNewTicket(true)
                 }
-                className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
+                className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"
               >
                 {projectMode === "overview"
                   ? "New Demand"
@@ -1465,7 +1478,7 @@ export default function ProjectsWorkspace() {
               <button
                 type="button"
                 onClick={generateProjectSummary}
-                className="h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                className="h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 hover:text-slate-950 hover:shadow-md"
               >
                 Generate Summary
               </button>
@@ -1474,7 +1487,7 @@ export default function ProjectsWorkspace() {
             <button
               type="button"
               onClick={() => setShowGenerateReport(true)}
-              className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:bg-slate-800"
+              className="h-10 shrink-0 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm shadow-slate-300 transition hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-md"
             >
               Generate Report
             </button>
@@ -1483,7 +1496,7 @@ export default function ProjectsWorkspace() {
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="border-b border-slate-200 bg-white p-4 lg:border-b-0 lg:border-r">
+        <aside className="border-b border-white/70 bg-white/85 p-4 shadow-sm shadow-slate-200/50 backdrop-blur lg:border-b-0 lg:border-r">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               Projects
@@ -1502,12 +1515,24 @@ export default function ProjectsWorkspace() {
               </span>
             </div>
           </div>
-          <input
-            value={projectQuery}
-            onChange={(event) => setProjectQuery(event.target.value)}
-            className="mb-3 h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-            placeholder="Filter projects"
-          />
+          <div className="relative mb-3">
+            <input
+              value={projectQuery}
+              onChange={(event) => setProjectQuery(event.target.value)}
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 pr-9 text-sm outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+              placeholder="Filter projects"
+            />
+            {projectQuery ? (
+              <button
+                type="button"
+                onClick={() => setProjectQuery("")}
+                className="absolute right-2 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded-md text-xs font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                aria-label="Clear project filter"
+              >
+                x
+              </button>
+            ) : null}
+          </div>
           <div className="space-y-3">
             {projectGroups.map((group) => (
               <ProjectTreeGroup

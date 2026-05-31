@@ -23,6 +23,7 @@ export function ProjectHeader({
 }) {
   const [pathCopied, setPathCopied] = useState(false);
   const [pathCopyBlocked, setPathCopyBlocked] = useState(false);
+  const externalPreviewUrl = `https://urovo-tech.patrick-shenzhen.org/urovo-projects?project_id=${encodeURIComponent(project.project_id)}`;
 
   async function copyProjectPath() {
     setPathCopied(false);
@@ -43,14 +44,14 @@ export function ProjectHeader({
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-white/80 bg-white/90 p-5 shadow-lg shadow-slate-200/60 ring-1 ring-slate-900/[0.03]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">
               {project.project_name}
             </h1>
-            <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 shadow-sm shadow-emerald-100">
               {project.sales || "Unknown"}
             </span>
             <button
@@ -61,7 +62,7 @@ export function ProjectHeader({
                   ? "border-emerald-300 bg-emerald-50 text-emerald-700"
                   : pathCopyBlocked
                     ? "border-amber-300 bg-amber-50 text-amber-700"
-                    : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+                    : "border-slate-200 bg-white text-slate-500 hover:border-cyan-200 hover:bg-cyan-50 hover:text-slate-950"
               }`}
               aria-label={
                 pathCopied
@@ -75,6 +76,15 @@ export function ProjectHeader({
               {pathCopied ? "✓" : "⧉"}
             </button>
           </div>
+          <a
+            href={externalPreviewUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex max-w-full items-center truncate rounded-md border border-cyan-100 bg-cyan-50/70 px-2 py-1 text-xs font-medium text-cyan-700 shadow-sm shadow-cyan-100/60 transition hover:border-cyan-200 hover:bg-white hover:text-cyan-800"
+            title={externalPreviewUrl}
+          >
+            {externalPreviewUrl}
+          </a>
           <div className="mt-3 text-xs text-slate-400">
             Created at {formatDate(project.created_at)}
           </div>
@@ -83,11 +93,11 @@ export function ProjectHeader({
           <button
             type="button"
             onClick={onOpenReleaseRecords}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 hover:text-slate-950 hover:shadow-md"
           >
             Release Record
           </button>
-          <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+          <div className="flex rounded-lg border border-slate-200/80 bg-white/80 p-1 shadow-inner shadow-slate-200/60">
             {(["overview", "tickets", "requirements"] as const).map((item) => (
               <button
                 key={item}
@@ -95,8 +105,8 @@ export function ProjectHeader({
                 onClick={() => onModeChange(item)}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                   mode === item
-                    ? "bg-white text-slate-950 shadow-sm"
-                    : "text-slate-500 hover:text-slate-950"
+                    ? "bg-slate-950 text-white shadow-sm shadow-slate-300"
+                    : "text-slate-500 hover:bg-cyan-50 hover:text-slate-950"
                 }`}
               >
                 {projectModeLabel(item)}
@@ -845,12 +855,24 @@ export function OverviewRequirementForm({
                 Close
               </button>
             </div>
-            <input
-              value={requirementQuery}
-              onChange={(event) => setRequirementQuery(event.target.value)}
-              className="mb-3 h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
-              placeholder="Search by requirement ID, title, status, or details"
-            />
+            <div className="relative mb-3">
+              <input
+                value={requirementQuery}
+                onChange={(event) => setRequirementQuery(event.target.value)}
+                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 pr-10 text-sm outline-none transition focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                placeholder="Search by requirement ID, title, status, or details"
+              />
+              {requirementQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setRequirementQuery("")}
+                  className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                  aria-label="Clear requirement search"
+                >
+                  x
+                </button>
+              ) : null}
+            </div>
             <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
               {selectableRequirements.map((requirement) => {
                 const selected = draft.linked_requirements.includes(
@@ -869,7 +891,7 @@ export function OverviewRequirementForm({
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selected
                         ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
-                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        : "border-slate-200 bg-white hover:border-cyan-200 hover:bg-cyan-50"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">

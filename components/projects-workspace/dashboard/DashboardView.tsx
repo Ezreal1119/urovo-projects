@@ -96,7 +96,7 @@ export function DashboardView({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-white/80 bg-white/90 p-5 shadow-lg shadow-slate-200/60 ring-1 ring-slate-900/[0.03]">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
@@ -112,11 +112,11 @@ export function DashboardView({
             <button
               type="button"
               onClick={onOpenReleaseNotes}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 hover:text-slate-950 hover:shadow-md"
             >
               Release Note
             </button>
-            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <div className="flex rounded-lg border border-slate-200/80 bg-white/80 p-1 shadow-inner shadow-slate-200/60">
               {(["tickets", "requirements"] as const).map((item) => (
                 <button
                   key={item}
@@ -124,8 +124,8 @@ export function DashboardView({
                   onClick={() => onModeChange(item)}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
                     mode === item
-                      ? "bg-white text-slate-950 shadow-sm"
-                      : "text-slate-500 hover:text-slate-950"
+                      ? "bg-slate-950 text-white shadow-sm shadow-slate-300"
+                      : "text-slate-500 hover:bg-cyan-50 hover:text-slate-950"
                   }`}
                 >
                   {dashboardModeLabel(item)}

@@ -79,9 +79,9 @@ export function TicketEventSummaryCard({
           event.preventDefault();
           onClick();
         }}
-        className={`w-full rounded-lg border bg-white p-4 text-left shadow-sm transition ${
-          onClick ? "cursor-pointer hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md" : ""
-        } ${active ? "border-slate-400 ring-2 ring-slate-200" : "border-slate-200"}`}
+        className={`relative w-full overflow-hidden rounded-lg border bg-white p-4 pt-5 text-left shadow-sm transition before:absolute before:inset-x-0 before:top-0 before:h-1 ${ticketAccentClass(ticket)} ${
+          onClick ? "cursor-pointer hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-md" : ""
+        } ${active ? "border-cyan-300 ring-2 ring-cyan-100" : "border-slate-200"}`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -113,7 +113,7 @@ export function TicketEventSummaryCard({
             event.preventDefault();
             setShowSummaries(true);
           }}
-          className="mt-4 w-full rounded-lg bg-slate-50 p-3 text-left transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-200"
+          className="mt-4 w-full rounded-lg border border-cyan-100 bg-[linear-gradient(135deg,#ecfeff,#f8fafc)] p-3 text-left shadow-sm shadow-cyan-100/60 transition hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 focus:outline-none focus:ring-4 focus:ring-cyan-100"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
@@ -125,7 +125,7 @@ export function TicketEventSummaryCard({
                 {ticket.events.length === 1 ? "event" : "events"}
               </div>
             </div>
-            <span className="shrink-0 text-xs font-medium text-slate-500">
+            <span className="shrink-0 rounded-md border border-cyan-200 bg-white px-2 py-1 text-xs font-medium text-cyan-700 shadow-sm">
               Open
             </span>
           </div>
@@ -133,9 +133,9 @@ export function TicketEventSummaryCard({
 
         {ticket.next_action || onStartNextActionEdit ? (
           <div
-            className={`mt-4 rounded-lg bg-slate-50 p-3 ${
+            className={`mt-4 rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ffffff)] p-3 shadow-inner shadow-slate-100 ${
               onStartNextActionEdit && !isEditingNextAction
-                ? "cursor-pointer hover:bg-slate-100"
+                ? "cursor-pointer hover:border-cyan-200 hover:bg-cyan-50"
                 : ""
             }`}
             onClick={(event) => {
@@ -218,8 +218,8 @@ function EventSummaryDialog({
 
   return (
     <Overlay>
-      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-slate-200 bg-white shadow-xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-white/30 bg-white shadow-2xl shadow-slate-950/20">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ecfeff)] p-5">
           <div className="min-w-0">
             <div className="text-xs font-medium text-slate-500">
               {ticket.id}
@@ -234,7 +234,7 @@ function EventSummaryDialog({
                 type="button"
                 onClick={onPolish}
                 disabled={polishing}
-                className="rounded-lg bg-slate-950 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg bg-slate-950 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {polishing ? "Polishing..." : "AI Polish"}
               </button>
@@ -242,25 +242,37 @@ function EventSummaryDialog({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50 hover:text-slate-950"
             >
               Close
             </button>
           </div>
         </div>
         <div className="overflow-y-auto p-5">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search event summaries"
-            className="mb-4 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-          />
+          <div className="relative mb-4">
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search event summaries"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 pr-10 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+            />
+            {search ? (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                aria-label="Clear event summary search"
+              >
+                x
+              </button>
+            ) : null}
+          </div>
           <div className="space-y-3">
             {filteredSummaries.map(({ summary, events }) => (
               <section
                 key={summary.uuid}
-                className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                className="rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ffffff)] p-3 shadow-sm shadow-slate-100"
               >
                 <div className="text-sm font-semibold text-slate-950">
                   {summaryTitle(summary)}
@@ -268,8 +280,8 @@ function EventSummaryDialog({
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                   {summary.message}
                 </p>
-                <details className="mt-3 rounded-md border border-slate-200 bg-white">
-                  <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-600">
+                <details className="mt-3 rounded-md border border-cyan-100 bg-white">
+                  <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-cyan-700">
                     {events.length} related raw{" "}
                     {events.length === 1 ? "event" : "events"}
                   </summary>
@@ -316,6 +328,19 @@ function RawEventRow({ event }: { event: TimelineEvent }) {
       </p>
     </div>
   );
+}
+
+function ticketAccentClass(ticket: Ticket) {
+  if (ticket.priority === "urgent") {
+    return "before:bg-gradient-to-r before:from-red-500 before:via-rose-400 before:to-slate-200";
+  }
+  if (ticket.status === "resolved") {
+    return "before:bg-gradient-to-r before:from-emerald-400 before:via-cyan-400 before:to-slate-200";
+  }
+  if (ticket.status === "pending_customer") {
+    return "before:bg-gradient-to-r before:from-amber-400 before:via-cyan-400 before:to-slate-200";
+  }
+  return "before:bg-gradient-to-r before:from-orange-400 before:via-cyan-400 before:to-slate-200";
 }
 
 function displaySummaries(
