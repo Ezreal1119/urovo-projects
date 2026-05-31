@@ -84,6 +84,7 @@ const previewTabs: { value: PreviewTab; label: string }[] = [
   { value: "tickets", label: "Tickets" },
   { value: "requirements", label: "Requirements" },
 ];
+const MODEL_FILTER_ALL = "__all_models__";
 
 export default function ProjectPublicPreview({
   project,
@@ -105,13 +106,25 @@ export default function ProjectPublicPreview({
   const [ticketFilter, setTicketFilter] = useState<TicketPreviewFilter>("all");
   const [requirementFilter, setRequirementFilter] =
     useState<RequirementPreviewFilter>("all");
+  const [overviewModelFilter, setOverviewModelFilter] =
+    useState(MODEL_FILTER_ALL);
+  const [releaseModelFilter, setReleaseModelFilter] =
+    useState(MODEL_FILTER_ALL);
+  const overviewModelOptions = useMemo(
+    () => exactModelOptions(overview.requirements.map((demand) => demand.product)),
+    [overview.requirements],
+  );
+  const releaseModelOptions = useMemo(
+    () => exactModelOptions(releaseRecords.map((record) => record.model)),
+    [releaseRecords],
+  );
   const filteredDemands = useMemo(
-    () => filterPreviewDemands(overview, requirements, query),
-    [overview, requirements, query],
+    () => filterPreviewDemands(overview, overviewModelFilter),
+    [overview, overviewModelFilter],
   );
   const filteredReleaseRecords = useMemo(
-    () => filterPreviewReleaseRecords(releaseRecords, query),
-    [releaseRecords, query],
+    () => filterPreviewReleaseRecords(releaseRecords, releaseModelFilter),
+    [releaseRecords, releaseModelFilter],
   );
   const filteredTickets = useMemo(
     () => filterPreviewTickets(tickets, ticketFilter, query),
@@ -196,9 +209,15 @@ export default function ProjectPublicPreview({
             query={query}
             ticketFilter={ticketFilter}
             requirementFilter={requirementFilter}
+            overviewModelFilter={overviewModelFilter}
+            releaseModelFilter={releaseModelFilter}
+            overviewModelOptions={overviewModelOptions}
+            releaseModelOptions={releaseModelOptions}
             onQueryChange={setQuery}
             onTicketFilterChange={setTicketFilter}
             onRequirementFilterChange={setRequirementFilter}
+            onOverviewModelFilterChange={setOverviewModelFilter}
+            onReleaseModelFilterChange={setReleaseModelFilter}
           />
         </section>
 
@@ -208,14 +227,14 @@ export default function ProjectPublicPreview({
             requirements={requirements}
             demands={filteredDemands}
             totalDemands={overview.requirements.length}
-            searching={query.trim().length > 0}
+            filtering={overviewModelFilter !== MODEL_FILTER_ALL}
             onOpenRequirement={openRequirement}
           />
         ) : tab === "release" ? (
           <ReleaseRecordsPreview
             releaseRecords={filteredReleaseRecords}
             totalReleaseRecords={releaseRecords.length}
-            filtering={query.trim().length > 0}
+            filtering={releaseModelFilter !== MODEL_FILTER_ALL}
           />
         ) : tab === "tickets" ? (
           <TicketsPreview
@@ -295,18 +314,57 @@ function PreviewFilterBar({
   query,
   ticketFilter,
   requirementFilter,
+  overviewModelFilter,
+  releaseModelFilter,
+  overviewModelOptions,
+  releaseModelOptions,
   onQueryChange,
   onTicketFilterChange,
   onRequirementFilterChange,
+  onOverviewModelFilterChange,
+  onReleaseModelFilterChange,
 }: {
   tab: PreviewTab;
   query: string;
   ticketFilter: TicketPreviewFilter;
   requirementFilter: RequirementPreviewFilter;
+  overviewModelFilter: string;
+  releaseModelFilter: string;
+  overviewModelOptions: string[];
+  releaseModelOptions: string[];
   onQueryChange: (query: string) => void;
   onTicketFilterChange: (filter: TicketPreviewFilter) => void;
   onRequirementFilterChange: (filter: RequirementPreviewFilter) => void;
+  onOverviewModelFilterChange: (model: string) => void;
+  onReleaseModelFilterChange: (model: string) => void;
 }) {
+  if (tab === "overview" || tab === "release") {
+    return (
+      <div className="bg-white/80 px-5 py-4 backdrop-blur">
+        <FilterChips
+          options={[
+            { value: MODEL_FILTER_ALL, label: "All" },
+            ...(tab === "overview"
+              ? overviewModelOptions.map((model) => ({
+                  value: model,
+                  label: model,
+                }))
+              : releaseModelOptions.map((model) => ({
+                  value: model,
+                  label: model,
+                }))),
+          ]}
+          value={tab === "overview" ? overviewModelFilter : releaseModelFilter}
+          onChange={
+            tab === "overview"
+              ? onOverviewModelFilterChange
+              : onReleaseModelFilterChange
+          }
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white/80 px-5 py-4 backdrop-blur">
       <div className="flex flex-wrap items-center gap-3">
@@ -319,13 +377,7 @@ function PreviewFilterBar({
               onChange={(event) => onQueryChange(event.target.value)}
               className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-7 pr-10 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
               placeholder={
-                tab === "overview"
-                  ? "Search demands"
-                  : tab === "release"
-                    ? "Search release records"
-                    : tab === "tickets"
-                      ? "Search tickets"
-                      : "Search requirements"
+                tab === "tickets" ? "Search tickets" : "Search requirements"
               }
             />
             {query ? (
@@ -392,14 +444,14 @@ function OverviewPreview({
   requirements,
   demands,
   totalDemands,
-  searching,
+  filtering,
   onOpenRequirement,
 }: {
   overview: Overview;
   requirements: Requirement[];
   demands: Overview["requirements"];
   totalDemands: number;
-  searching: boolean;
+  filtering: boolean;
   onOpenRequirement: (requirement: Requirement) => void;
 }) {
   const requirementMap = new Map(
@@ -502,7 +554,7 @@ function OverviewPreview({
           {demands.length === 0 ? (
             <EmptyPreview
               text={
-                searching
+                filtering
                   ? "No matching product demands."
                   : "No product demands for this project."
               }
@@ -884,6 +936,32 @@ function RawEventRow({ event }: { event: TimelineEvent }) {
   );
 }
 
+function ExpandableRequirementDetails({ details }: { details: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!details) {
+    return (
+      <p className="mt-3 text-sm leading-6 text-slate-600">No details.</p>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded((current) => !current)}
+      className="mt-3 block w-full rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ffffff)] p-3 text-left text-sm leading-6 text-slate-600 shadow-inner shadow-slate-100 transition hover:border-cyan-200 hover:bg-cyan-50 focus:outline-none focus:ring-4 focus:ring-cyan-100"
+      aria-expanded={expanded}
+    >
+      <span
+        className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${
+          expanded ? "block" : "line-clamp-3"
+        }`}
+      >
+        {details}
+      </span>
+    </button>
+  );
+}
+
 function RequirementsPreview({
   requirements,
   totalRequirements,
@@ -920,9 +998,7 @@ function RequirementsPreview({
               </h3>
               <RequirementStatusPill status={requirement.status} />
             </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              {requirement.details || "No details."}
-            </p>
+            <ExpandableRequirementDetails details={requirement.details} />
             {requirement.related_tickets.length > 0 ? (
               <div className="mt-3 rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 shadow-sm shadow-cyan-100/60">
                 <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -1086,50 +1162,13 @@ function EmptyPreview({ text }: { text: string }) {
   );
 }
 
-function filterPreviewDemands(
-  overview: Overview,
-  requirements: Requirement[],
-  query: string,
-) {
-  const normalizedQuery = normalizeQuery(query);
+function filterPreviewDemands(overview: Overview, modelFilter: string) {
   const demands = sortOverviewDemandsForSummary(overview.requirements);
-  if (!normalizedQuery) {
+  if (modelFilter === MODEL_FILTER_ALL) {
     return demands;
   }
 
-  const requirementMap = new Map(
-    requirements.map((requirement) => [requirement.id, requirement]),
-  );
-
-  return demands.filter((demand) => {
-    const linkedRequirementText = demand.linked_requirements
-      .map((requirementId) => {
-        const requirement = requirementMap.get(requirementId);
-        return requirement
-          ? [
-              requirement.id,
-              requirement.title,
-              stripBracketMetadata(requirement.title),
-              requirementStatusLabels[requirement.status],
-            ].join(" ")
-          : requirementId;
-      })
-      .join(" ");
-
-    return includesQuery(
-      [
-        overview.description,
-        ...overview.models,
-        ...overview.others,
-        demand.id,
-        demand.product,
-        ...demand.simple_requirements,
-        linkedRequirementText,
-        demand.remark,
-      ],
-      normalizedQuery,
-    );
-  });
+  return demands.filter((demand) => demand.product === modelFilter);
 }
 
 function filterPreviewTickets(
@@ -1170,27 +1209,13 @@ function filterPreviewTickets(
 
 function filterPreviewReleaseRecords(
   releaseRecords: ReleaseRecord[],
-  query: string,
+  modelFilter: string,
 ) {
-  const normalizedQuery = normalizeQuery(query);
-  if (!normalizedQuery) {
+  if (modelFilter === MODEL_FILTER_ALL) {
     return releaseRecords;
   }
 
-  return releaseRecords.filter((record) =>
-    includesQuery(
-      [
-        record.model,
-        record.firmware.os,
-        record.firmware.ufs,
-        record.firmware.se,
-        record.change_log,
-        record.release_date || "Not Released",
-        String(record.order_count ?? ""),
-      ],
-      normalizedQuery,
-    ),
-  );
+  return releaseRecords.filter((record) => record.model === modelFilter);
 }
 
 function filterPreviewRequirements(
@@ -1387,6 +1412,12 @@ function normalizeQuery(query: string) {
 
 function searchTextForTitle(title: string) {
   return stripBracketMetadata(title).trim() || title;
+}
+
+function exactModelOptions(models: string[]) {
+  return Array.from(
+    new Set(models.map((model) => model.trim()).filter(Boolean)),
+  ).sort((first, second) => first.localeCompare(second));
 }
 
 function visibleCountText(visible: number, total: number) {
