@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type ReleaseRecord, type ReleaseRecordInput, type Requirement, type Ticket } from "@/lib/types";
+import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type ReleaseRecord, type ReleaseRecordInput, type Requirement, type Ticket, type TicketEventSummariesFile } from "@/lib/types";
 import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
@@ -17,6 +17,7 @@ import { ProjectHeader, OverviewRequirementDrawer, OverviewRequirementModal, Ove
 import { ReleaseModelPickerDialog, ReleaseRecordsDialog } from "./projects-workspace/overview/ReleaseRecordsDialog";
 import { RequirementDrawer, RequirementModal, RequirementsWorkspace } from "./projects-workspace/requirements/RequirementsWorkspace";
 import { TicketCard, TicketDrawer, TicketModal } from "./projects-workspace/tickets/TicketsWorkspace";
+import { TicketEventSummaryCard, ticketEventSummaryForTicket } from "./projects-workspace/tickets/TicketEventSummaries";
 import { ProjectTreeGroup } from "./projects-workspace/sidebar/ProjectTreeGroup";
 import { Metric, Toast, Pagination } from "./projects-workspace/ui";
 import { AiAnalysisDialog, GenerateReportDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
@@ -26,6 +27,12 @@ type AiAnalysisTarget = {
   entityId: string;
   title: string;
   hasUnsavedChanges: boolean;
+};
+
+const emptyTicketEventSummaries: TicketEventSummariesFile = {
+  version: 1,
+  last_polished_at: "",
+  tickets: [],
 };
 
 export default function ProjectsWorkspace() {
@@ -48,6 +55,8 @@ export default function ProjectsWorkspace() {
   );
   const [overview, setOverview] = useState<Overview>(emptyOverview);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [ticketEventSummaries, setTicketEventSummaries] =
+    useState<TicketEventSummariesFile>(emptyTicketEventSummaries);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState("");
   const [selectedRequirementId, setSelectedRequirementId] = useState("");
@@ -64,7 +73,11 @@ export default function ProjectsWorkspace() {
   const [requirementPage, setRequirementPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [ticketPolishing, setTicketPolishing] = useState(false);
+  const [polishingTicketId, setPolishingTicketId] = useState("");
   const [error, setError] = useState("");
+  const [ticketEventSummariesError, setTicketEventSummariesError] =
+    useState("");
   const [toast, setToast] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [showNewRequirement, setShowNewRequirement] = useState(false);
@@ -89,6 +102,7 @@ export default function ProjectsWorkspace() {
   const [aiAnalysisError, setAiAnalysisError] = useState("");
   const [editingNextActionId, setEditingNextActionId] = useState("");
   const [nextActionDraft, setNextActionDraft] = useState("");
+  const [aiEnhancedTickets, setAiEnhancedTickets] = useState(true);
   const [selectedTicketDirty, setSelectedTicketDirty] = useState(false);
   const [selectedRequirementDirty, setSelectedRequirementDirty] =
     useState(false);
@@ -434,6 +448,8 @@ export default function ProjectsWorkspace() {
     setSelectedOverviewRequirementId("");
     setOverview(emptyOverview);
     setTickets([]);
+    setTicketEventSummaries(emptyTicketEventSummaries);
+    setTicketEventSummariesError("");
     setRequirements([]);
     setShowReleaseModelPicker(false);
     setReleaseModel("");
@@ -457,6 +473,21 @@ export default function ProjectsWorkspace() {
       }
       setSelectedProject(data.project);
       setTickets(data.tickets);
+      try {
+        const summariesData = await api<{ summaries: TicketEventSummariesFile }>(
+          `${projectApiPath(folder)}/ticket-event-summaries`,
+        );
+        if (loadProjectRequestId.current !== requestId) {
+          return;
+        }
+        setTicketEventSummaries(summariesData.summaries);
+      } catch (requestError) {
+        if (loadProjectRequestId.current !== requestId) {
+          return;
+        }
+        setTicketEventSummaries(emptyTicketEventSummaries);
+        setTicketEventSummariesError((requestError as Error).message);
+      }
       const overviewData = await api<{ overview: Overview }>(
         `${projectApiPath(folder)}/overview`,
       );
@@ -489,6 +520,8 @@ export default function ProjectsWorkspace() {
       setSelectedProject(null);
       setOverview(emptyOverview);
       setTickets([]);
+      setTicketEventSummaries(emptyTicketEventSummaries);
+      setTicketEventSummariesError("");
       setRequirements([]);
       setReleaseModel("");
       setReleaseRecords([]);
@@ -618,6 +651,60 @@ export default function ProjectsWorkspace() {
       setAiAnalysisError((requestError as Error).message);
     } finally {
       setAiAnalysisLoading(false);
+    }
+  }
+
+  async function polishTicketEvents() {
+    if (!selectedFolder) {
+      return;
+    }
+    if (!confirm("AI Polish all tickets for this project? This can take a while.")) {
+      return;
+    }
+    setTicketPolishing(true);
+    setTicketEventSummariesError("");
+    try {
+      const data = await api<{
+        tickets: Ticket[];
+        summaries: TicketEventSummariesFile;
+      }>(`${projectApiPath(selectedFolder)}/ticket-event-summaries`, {
+        method: "POST",
+      });
+      setTickets(data.tickets);
+      setTicketEventSummaries(data.summaries);
+      refreshDashboardQuietly();
+      showToast("Batch AI Polish finished.");
+    } catch (requestError) {
+      setTicketEventSummariesError((requestError as Error).message);
+      showToast("Batch AI Polish failed.");
+    } finally {
+      setTicketPolishing(false);
+    }
+  }
+
+  async function polishSingleTicket(ticketId: string) {
+    if (!selectedFolder) {
+      return;
+    }
+    setPolishingTicketId(ticketId);
+    setTicketEventSummariesError("");
+    try {
+      const data = await api<{
+        tickets: Ticket[];
+        summaries: TicketEventSummariesFile;
+      }>(
+        `${projectApiPath(selectedFolder)}/ticket-event-summaries/${ticketId}`,
+        { method: "POST" },
+      );
+      setTickets(data.tickets);
+      setTicketEventSummaries(data.summaries);
+      refreshDashboardQuietly();
+      showToast(`AI Polish finished for ${ticketId}.`);
+    } catch (requestError) {
+      setTicketEventSummariesError((requestError as Error).message);
+      showToast(`AI Polish failed for ${ticketId}.`);
+    } finally {
+      setPolishingTicketId("");
     }
   }
 
@@ -1557,37 +1644,94 @@ export default function ProjectsWorkspace() {
                   </section>
 
                   <section className="mt-6">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h2 className="text-sm font-semibold text-slate-900">
-                        Ticket Dashboard
-                      </h2>
-                      <span className="text-xs text-slate-500">
-                        {filteredTickets.length === 0
-                          ? "0 shown"
-                          : `${(visibleTicketPage - 1) * TICKETS_PER_PAGE + 1}-${Math.min(
-                              visibleTicketPage * TICKETS_PER_PAGE,
-                              filteredTickets.length,
-                            )} of ${filteredTickets.length} shown`}
-                      </span>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-semibold text-slate-900">
+                          Ticket Dashboard
+                        </h2>
+                        <span className="text-xs text-slate-500">
+                          {filteredTickets.length === 0
+                            ? "0 shown"
+                            : `${(visibleTicketPage - 1) * TICKETS_PER_PAGE + 1}-${Math.min(
+                                visibleTicketPage * TICKETS_PER_PAGE,
+                                filteredTickets.length,
+                              )} of ${filteredTickets.length} shown`}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
+                          <input
+                            type="checkbox"
+                            checked={aiEnhancedTickets}
+                            onChange={(event) =>
+                              setAiEnhancedTickets(event.target.checked)
+                            }
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                          <span>
+                            AI Enhanced
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => void polishTicketEvents()}
+                          disabled={saving || ticketPolishing}
+                          className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {ticketPolishing ? "Polishing..." : "Batch AI Polish"}
+                        </button>
+                      </div>
                     </div>
+                    {ticketEventSummariesError ? (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        {ticketEventSummariesError}
+                      </div>
+                    ) : null}
                     <div className="space-y-3">
-                      {paginatedTickets.map((ticket) => (
-                        <TicketCard
-                          key={ticket.id}
-                          ticket={ticket}
-                          active={ticket.id === selectedTicketId}
-                          onClick={() => selectTicket(ticket.id)}
-                          isEditingNextAction={
-                            ticket.id === editingNextActionId
-                          }
-                          nextActionDraft={nextActionDraft}
-                          onStartNextActionEdit={() =>
-                            startNextActionEdit(ticket)
-                          }
-                          onNextActionDraftChange={setNextActionDraft}
-                          onSaveNextAction={() => void saveNextAction(ticket)}
-                        />
-                      ))}
+                      {paginatedTickets.map((ticket) => {
+                        const summaryTicket = ticketEventSummaryForTicket(
+                          ticketEventSummaries,
+                          ticket,
+                        );
+                        const showAiCard = aiEnhancedTickets;
+
+                        return showAiCard ? (
+                          <TicketEventSummaryCard
+                            key={ticket.id}
+                            ticket={ticket}
+                            summaryTicket={summaryTicket}
+                            active={ticket.id === selectedTicketId}
+                            polishing={polishingTicketId === ticket.id}
+                            isEditingNextAction={
+                              ticket.id === editingNextActionId
+                            }
+                            nextActionDraft={nextActionDraft}
+                            onClick={() => selectTicket(ticket.id)}
+                            onPolish={() => void polishSingleTicket(ticket.id)}
+                            onStartNextActionEdit={() =>
+                              startNextActionEdit(ticket)
+                            }
+                            onNextActionDraftChange={setNextActionDraft}
+                            onSaveNextAction={() => void saveNextAction(ticket)}
+                          />
+                        ) : (
+                          <TicketCard
+                            key={ticket.id}
+                            ticket={ticket}
+                            active={ticket.id === selectedTicketId}
+                            onClick={() => selectTicket(ticket.id)}
+                            isEditingNextAction={
+                              ticket.id === editingNextActionId
+                            }
+                            nextActionDraft={nextActionDraft}
+                            onStartNextActionEdit={() =>
+                              startNextActionEdit(ticket)
+                            }
+                            onNextActionDraftChange={setNextActionDraft}
+                            onSaveNextAction={() => void saveNextAction(ticket)}
+                          />
+                        );
+                      })}
                     </div>
                     {filteredTickets.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-slate-200 bg-white p-10 text-center">

@@ -43,6 +43,17 @@ const EMPTY_OVERVIEW: Overview = {
   requirements: [],
 };
 
+type NormalizeUuidOptions = {
+  generateMissingUuid?: boolean;
+};
+
+export type ProjectUuidBackfillResult = {
+  tickets: Ticket[];
+  requirements: Requirement[];
+  overview: Overview;
+  changed: boolean;
+};
+
 export function getProjectsRoot() {
   const root = process.env.PROJECTS_ROOT;
   if (!root) {
@@ -221,6 +232,41 @@ export async function writeOverview(key: string, overview: Overview) {
   await writeJsonAtomic(path.join(projectDir(key), "overview.json"), normalizeOverview(overview));
 }
 
+export async function backfillProjectUuids(key: string): Promise<ProjectUuidBackfillResult> {
+  await readProject(key);
+  const dir = projectDir(key);
+  let changed = false;
+
+  const ticketsPath = path.join(dir, "tickets.json");
+  const rawTickets = await readJson<unknown>(ticketsPath, []);
+  if (Array.isArray(rawTickets) && backfillTicketUuids(rawTickets)) {
+    await writeJsonAtomic(ticketsPath, rawTickets);
+    changed = true;
+  }
+
+  const requirementsPath = path.join(dir, "requirements.json");
+  const rawRequirements = await readJson<unknown>(requirementsPath, []);
+  if (Array.isArray(rawRequirements) && backfillRequirementUuids(rawRequirements)) {
+    await writeJsonAtomic(requirementsPath, rawRequirements);
+    changed = true;
+  }
+
+  const overviewPath = path.join(dir, "overview.json");
+  const rawOverview = await readJson<unknown>(overviewPath, EMPTY_OVERVIEW);
+  if (isRecord(rawOverview) && backfillOverviewUuids(rawOverview)) {
+    await writeJsonAtomic(overviewPath, rawOverview);
+    changed = true;
+  }
+
+  const [tickets, requirements, overview] = await Promise.all([
+    readTickets(key),
+    readRequirements(key),
+    readOverview(key),
+  ]);
+
+  return { tickets, requirements, overview, changed };
+}
+
 export function updateOverviewPayload(existing: Overview, input: OverviewInput): Overview {
   const nextModels = input.models === undefined ? existing.models : normalizeTextList(input.models);
   const nextOthers = input.others === undefined ? existing.others : normalizeTextList(input.others);
@@ -269,6 +315,7 @@ export function updateOverviewRequirementPayload(
   return normalizeOverviewRequirement(
     {
       ...existingRequirement,
+      uuid: existingRequirement.uuid || randomUUID(),
       product: input.product === undefined ? existingRequirement.product : cleanText(input.product),
       simple_requirements:
         input.simple_requirements === undefined
@@ -292,7 +339,7 @@ export function createRequirementPayload(input: RequirementInput, existing: Requ
     title: cleanText(input.title) || "Untitled requirement",
     status: pickValue(input.status, REQUIREMENT_STATUSES, "in_progress"),
     details: cleanText(input.details),
-    timeline: normalizeRequirementTimeline(input.timeline),
+    timeline: normalizeRequirementTimeline(input.timeline, { generateMissingUuid: true }),
     related_tickets: normalizeRelatedTickets(input.related_tickets),
     references: normalizeLocalFileReferences(input.references),
     created_at: now,
@@ -303,13 +350,16 @@ export function createRequirementPayload(input: RequirementInput, existing: Requ
 export function updateRequirementPayload(existing: Requirement, input: RequirementInput): Requirement {
   return normalizeRequirement({
     ...existing,
+    uuid: existing.uuid || randomUUID(),
     title: input.title === undefined ? existing.title : cleanText(input.title) || existing.title,
     status:
       input.status === undefined
         ? pickValue(existing.status, REQUIREMENT_STATUSES, "in_progress")
         : pickValue(input.status, REQUIREMENT_STATUSES, pickValue(existing.status, REQUIREMENT_STATUSES, "in_progress")),
     details: input.details === undefined ? existing.details : cleanText(input.details),
-    timeline: input.timeline ? normalizeRequirementTimeline(input.timeline) : existing.timeline,
+    timeline: input.timeline
+      ? normalizeRequirementTimeline(input.timeline, { generateMissingUuid: true })
+      : existing.timeline,
     related_tickets: input.related_tickets ? normalizeRelatedTickets(input.related_tickets) : existing.related_tickets,
     references:
       input.references === undefined
@@ -321,6 +371,7 @@ export function updateRequirementPayload(existing: Requirement, input: Requireme
 
 export function createRequirementTimelinePayload(input: RequirementTimelineInput): RequirementTimelineItem {
   return normalizeRequirementTimelineItem({
+    uuid: randomUUID(),
     time: cleanText(input.time) || beijingNowIsoString(),
     remark: cleanText(input.remark),
   });
@@ -331,6 +382,7 @@ export function updateRequirementTimelinePayload(
   input: RequirementTimelineInput,
 ): RequirementTimelineItem {
   return normalizeRequirementTimelineItem({
+    uuid: existing.uuid || randomUUID(),
     time: cleanText(input.time) || existing.time,
     remark: cleanText(input.remark),
   });
@@ -348,7 +400,7 @@ export function createTicketPayload(input: TicketInput, existing: Ticket[], proj
     updated_at: now,
     summary: cleanText(input.summary),
     next_action: cleanText(input.next_action),
-    events: normalizeEvents(input.events),
+    events: normalizeEvents(input.events, { generateMissingUuid: true }),
     references: normalizeLocalFileReferences(input.references),
   });
 }
@@ -356,12 +408,13 @@ export function createTicketPayload(input: TicketInput, existing: Ticket[], proj
 export function updateTicketPayload(existing: Ticket, input: TicketInput): Ticket {
   return normalizeTicket({
     ...existing,
+    uuid: existing.uuid || randomUUID(),
     title: cleanText(input.title) || existing.title,
     status: pickValue(input.status, STATUSES, pickValue(existing.status, STATUSES, "pending_internal")),
     priority: pickValue(input.priority, PRIORITIES, existing.priority),
     summary: cleanText(input.summary),
     next_action: cleanText(input.next_action),
-    events: input.events ? normalizeEvents(input.events) : existing.events,
+    events: input.events ? normalizeEvents(input.events, { generateMissingUuid: true }) : existing.events,
     references:
       input.references === undefined
         ? existing.references
@@ -372,6 +425,7 @@ export function updateTicketPayload(existing: Ticket, input: TicketInput): Ticke
 
 export function createEventPayload(input: EventInput): TimelineEvent {
   return normalizeEvent({
+    uuid: randomUUID(),
     time: cleanText(input.time) || beijingNowIsoString(),
     role: pickValue(input.role, EVENT_ROLES, "others"),
     content: cleanText(input.content),
@@ -380,6 +434,7 @@ export function createEventPayload(input: EventInput): TimelineEvent {
 
 export function updateEventPayload(existing: TimelineEvent, input: EventInput): TimelineEvent {
   return normalizeEvent({
+    uuid: existing.uuid || randomUUID(),
     time: cleanText(input.time) || existing.time,
     role: pickValue(input.role, EVENT_ROLES, pickValue(existing.role, EVENT_ROLES, "others")),
     content: cleanText(input.content),
@@ -419,12 +474,19 @@ function normalizeTicket(ticket: Ticket): Ticket {
   };
 }
 
-function normalizeEvents(events: unknown): TimelineEvent[] {
-  return Array.isArray(events) ? events.map(normalizeEvent).sort(sortEvents) : [];
+function normalizeEvents(events: unknown, options: NormalizeUuidOptions = {}): TimelineEvent[] {
+  return Array.isArray(events)
+    ? events.map((event) => normalizeEvent(event, options)).sort(sortEvents)
+    : [];
 }
 
-function normalizeEvent(event: Partial<TimelineEvent>): TimelineEvent {
+function normalizeEvent(
+  event: Partial<TimelineEvent>,
+  options: NormalizeUuidOptions = {},
+): TimelineEvent {
+  const uuid = cleanText(event.uuid) || (options.generateMissingUuid ? randomUUID() : undefined);
   return {
+    ...(uuid ? { uuid } : {}),
     time: cleanText(event.time) || beijingNowIsoString(),
     role: pickValue(event.role, EVENT_ROLES, "others"),
     content: cleanText(event.content),
@@ -485,15 +547,91 @@ function normalizeOverviewRequirement(
   };
 }
 
-function normalizeRequirementTimeline(timeline: unknown): RequirementTimelineItem[] {
-  return Array.isArray(timeline) ? timeline.map(normalizeRequirementTimelineItem).sort(sortRequirementTimeline) : [];
+function normalizeRequirementTimeline(
+  timeline: unknown,
+  options: NormalizeUuidOptions = {},
+): RequirementTimelineItem[] {
+  return Array.isArray(timeline)
+    ? timeline.map((item) => normalizeRequirementTimelineItem(item, options)).sort(sortRequirementTimeline)
+    : [];
 }
 
-function normalizeRequirementTimelineItem(item: Partial<RequirementTimelineItem>): RequirementTimelineItem {
+function normalizeRequirementTimelineItem(
+  item: Partial<RequirementTimelineItem>,
+  options: NormalizeUuidOptions = {},
+): RequirementTimelineItem {
+  const uuid = cleanText(item.uuid) || (options.generateMissingUuid ? randomUUID() : undefined);
   return {
+    ...(uuid ? { uuid } : {}),
     time: cleanText(item.time) || beijingNowIsoString(),
     remark: cleanText(item.remark),
   };
+}
+
+function backfillTicketUuids(tickets: unknown[]) {
+  let changed = false;
+  for (const ticket of tickets) {
+    if (!isRecord(ticket)) {
+      continue;
+    }
+    changed = addUuidIfMissing(ticket) || changed;
+    const events = ticket.events;
+    if (!Array.isArray(events)) {
+      continue;
+    }
+    for (const event of events) {
+      if (isRecord(event)) {
+        changed = addUuidIfMissing(event) || changed;
+      }
+    }
+  }
+  return changed;
+}
+
+function backfillRequirementUuids(requirements: unknown[]) {
+  let changed = false;
+  for (const requirement of requirements) {
+    if (!isRecord(requirement)) {
+      continue;
+    }
+    changed = addUuidIfMissing(requirement) || changed;
+    const timeline = requirement.timeline;
+    if (!Array.isArray(timeline)) {
+      continue;
+    }
+    for (const item of timeline) {
+      if (isRecord(item)) {
+        changed = addUuidIfMissing(item) || changed;
+      }
+    }
+  }
+  return changed;
+}
+
+function backfillOverviewUuids(overview: Record<string, unknown>) {
+  let changed = false;
+  const requirements = overview.requirements;
+  if (!Array.isArray(requirements)) {
+    return false;
+  }
+  for (const requirement of requirements) {
+    if (isRecord(requirement)) {
+      changed = addUuidIfMissing(requirement) || changed;
+    }
+  }
+  return changed;
+}
+
+function addUuidIfMissing(record: Record<string, unknown>) {
+  if (cleanText(record.uuid)) {
+    return false;
+  }
+  record.uuid = randomUUID();
+  return true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeRelatedTickets(relatedTickets: unknown): string[] {

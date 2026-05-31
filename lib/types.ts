@@ -41,6 +41,7 @@ export type DashboardData = {
 };
 
 export type TimelineEvent = {
+  uuid?: string;
   time: string;
   role: EventRole;
   content: string;
@@ -73,6 +74,7 @@ export type TicketInput = Partial<Omit<Ticket, "id" | "uuid" | "created_at" | "u
 export type EventInput = Partial<TimelineEvent>;
 
 export type RequirementTimelineItem = {
+  uuid?: string;
   time: string;
   remark: string;
 };
@@ -146,6 +148,26 @@ export type ReleaseNoteRow = {
   customer: string;
   model: string;
   change_log: string;
+};
+
+export type TicketEventSummary = {
+  uuid: string;
+  title: string;
+  message: string;
+  related_event_uuids: string[];
+};
+
+export type TicketEventSummaryTicket = {
+  ticket_uuid: string;
+  ticket_id: string;
+  last_polished_at: string;
+  summaries: TicketEventSummary[];
+};
+
+export type TicketEventSummariesFile = {
+  version: 1;
+  last_polished_at: string;
+  tickets: TicketEventSummaryTicket[];
 };
 
 export type ChangeLogEntityType = "demand" | "ticket" | "requirement" | "project";
