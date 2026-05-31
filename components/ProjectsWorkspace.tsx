@@ -1702,8 +1702,17 @@ export default function ProjectsWorkspace() {
                             summaryTicket={summaryTicket}
                             active={ticket.id === selectedTicketId}
                             polishing={polishingTicketId === ticket.id}
+                            isEditingNextAction={
+                              ticket.id === editingNextActionId
+                            }
+                            nextActionDraft={nextActionDraft}
                             onClick={() => selectTicket(ticket.id)}
                             onPolish={() => void polishSingleTicket(ticket.id)}
+                            onStartNextActionEdit={() =>
+                              startNextActionEdit(ticket)
+                            }
+                            onNextActionDraftChange={setNextActionDraft}
+                            onSaveNextAction={() => void saveNextAction(ticket)}
                           />
                         ) : (
                           <TicketCard

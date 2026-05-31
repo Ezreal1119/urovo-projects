@@ -6,6 +6,7 @@ import {
   projectDir,
   readProject,
 } from "./projects";
+import { appendAiPolishInteraction } from "./ai-polish-log";
 import { beijingNowIsoString } from "./time";
 import type {
   Ticket,
@@ -19,6 +20,8 @@ const TICKET_EVENT_SUMMARIES_FILE = "ticket-event-summaries.json";
 const TICKET_EVENT_SUMMARIES_VERSION = 1;
 const DEEPSEEK_CHAT_COMPLETIONS_URL =
   "https://api.deepseek.com/chat/completions";
+const MAX_SUMMARY_TITLE_LENGTH = 80;
+const MAX_SUMMARY_TITLE_WORDS = 5;
 const MAX_SUMMARY_MESSAGE_LENGTH = 1200;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -26,6 +29,13 @@ const UUID_PATTERN =
 type PolishResult = {
   tickets: Ticket[];
   summaries: TicketEventSummariesFile;
+};
+
+type ValidatedAiTicketEventSummaries = {
+  summaries: TicketEventSummaryTicket[];
+  rawResponse: string;
+  retryRawResponse?: string;
+  retryReason?: string;
 };
 
 type RawAiTicketEventSummaries = {
@@ -54,24 +64,58 @@ export async function polishTicketEventSummaries(
   const { tickets } = await backfillProjectUuids(key);
   const previousSummaries = await readTicketEventSummaries(key);
   const polishedAt = beijingNowIsoString();
-  const rawSummaries = await requestDeepSeekTicketEventSummaries({
+  const aiContext = {
     project,
     tickets: tickets.map(compactTicketForAi),
     previous_summaries: previousSummaries.tickets,
-  });
-  const summaries: TicketEventSummariesFile = {
-    version: TICKET_EVENT_SUMMARIES_VERSION,
-    last_polished_at: polishedAt,
-    tickets: validateAiTicketEventSummaries(
-      rawSummaries,
+  };
+
+  let rawResponse = "";
+  let retryRawResponse = "";
+  let retryReason = "";
+  try {
+    const polished = await requestValidatedTicketEventSummaries({
+      context: aiContext,
       tickets,
       previousSummaries,
       polishedAt,
-    ),
-  };
+    });
+    rawResponse = polished.rawResponse;
+    retryRawResponse = polished.retryRawResponse ?? "";
+    retryReason = polished.retryReason ?? "";
+    const summaries: TicketEventSummariesFile = {
+      version: TICKET_EVENT_SUMMARIES_VERSION,
+      last_polished_at: polishedAt,
+      tickets: polished.summaries,
+    };
 
-  await writeTicketEventSummaries(key, summaries);
-  return { tickets, summaries };
+    await appendAiPolishInteraction({
+      project_key: key,
+      mode: "batch",
+      prompt: TICKET_EVENT_SUMMARY_PROMPT,
+      context: aiContext,
+      raw_response: rawResponse,
+      retry_raw_response: retryRawResponse || undefined,
+      retry_reason: retryReason || undefined,
+      validation: "success",
+    });
+
+    await writeTicketEventSummaries(key, summaries);
+    return { tickets, summaries };
+  } catch (error) {
+    await appendAiPolishInteraction({
+      project_key: key,
+      mode: "batch",
+      prompt: TICKET_EVENT_SUMMARY_PROMPT,
+      context: aiContext,
+      raw_response: rawResponse || undefined,
+      retry_raw_response: retryRawResponse || undefined,
+      retry_reason: retryReason || undefined,
+      validation: "error",
+      error: errorMessage(error),
+    });
+    throw error;
+  }
 }
 
 export async function polishSingleTicketEventSummaries(
@@ -95,29 +139,64 @@ export async function polishSingleTicketEventSummaries(
         current.ticket_id === ticket.id,
     ),
   };
-  const rawSummaries = await requestDeepSeekTicketEventSummaries({
+  const aiContext = {
     project,
     tickets: [compactTicketForAi(ticket)],
     previous_summaries: previousTicketSummaries.tickets,
-  });
-  const nextTicketSummaries = validateAiTicketEventSummaries(
-    rawSummaries,
-    [ticket],
-    previousTicketSummaries,
-    polishedAt,
-  );
-  const summaries: TicketEventSummariesFile = {
-    version: TICKET_EVENT_SUMMARIES_VERSION,
-    last_polished_at: polishedAt,
-    tickets: mergeTicketSummaries(
-      previousSummaries,
-      ticket,
-      nextTicketSummaries[0],
-    ),
   };
 
-  await writeTicketEventSummaries(key, summaries);
-  return { tickets, summaries };
+  let rawResponse = "";
+  let retryRawResponse = "";
+  let retryReason = "";
+  try {
+    const polished = await requestValidatedTicketEventSummaries({
+      context: aiContext,
+      tickets: [ticket],
+      previousSummaries: previousTicketSummaries,
+      polishedAt,
+    });
+    rawResponse = polished.rawResponse;
+    retryRawResponse = polished.retryRawResponse ?? "";
+    retryReason = polished.retryReason ?? "";
+    const summaries: TicketEventSummariesFile = {
+      version: TICKET_EVENT_SUMMARIES_VERSION,
+      last_polished_at: polishedAt,
+      tickets: mergeTicketSummaries(
+        previousSummaries,
+        ticket,
+        polished.summaries[0],
+      ),
+    };
+
+    await appendAiPolishInteraction({
+      project_key: key,
+      mode: "single-ticket",
+      ticket_id: ticket.id,
+      prompt: TICKET_EVENT_SUMMARY_PROMPT,
+      context: aiContext,
+      raw_response: rawResponse,
+      retry_raw_response: retryRawResponse || undefined,
+      retry_reason: retryReason || undefined,
+      validation: "success",
+    });
+
+    await writeTicketEventSummaries(key, summaries);
+    return { tickets, summaries };
+  } catch (error) {
+    await appendAiPolishInteraction({
+      project_key: key,
+      mode: "single-ticket",
+      ticket_id: ticket.id,
+      prompt: TICKET_EVENT_SUMMARY_PROMPT,
+      context: aiContext,
+      raw_response: rawResponse || undefined,
+      retry_raw_response: retryRawResponse || undefined,
+      retry_reason: retryReason || undefined,
+      validation: "error",
+      error: errorMessage(error),
+    });
+    throw error;
+  }
 }
 
 function emptyTicketEventSummaries(): TicketEventSummariesFile {
@@ -154,10 +233,75 @@ async function writeTicketEventSummaries(
   await rename(tempFile, filePath);
 }
 
-async function requestDeepSeekTicketEventSummaries(context: unknown) {
+async function requestValidatedTicketEventSummaries({
+  context,
+  tickets,
+  previousSummaries,
+  polishedAt,
+}: {
+  context: unknown;
+  tickets: Ticket[];
+  previousSummaries: TicketEventSummariesFile;
+  polishedAt: string;
+}): Promise<ValidatedAiTicketEventSummaries> {
+  const rawResponse = await requestDeepSeekTicketEventSummaries(context);
+  try {
+    return {
+      rawResponse,
+      summaries: validateAiTicketEventSummaries(
+        parseAiJson(rawResponse),
+        tickets,
+        previousSummaries,
+        polishedAt,
+      ),
+    };
+  } catch (error) {
+    const retryReason = errorMessage(error);
+    const retryRawResponse = await requestDeepSeekTicketEventSummaries(context, {
+      previousResponse: rawResponse,
+      validationError: retryReason,
+    });
+
+    return {
+      rawResponse,
+      retryRawResponse,
+      retryReason,
+      summaries: validateAiTicketEventSummaries(
+        parseAiJson(retryRawResponse),
+        tickets,
+        previousSummaries,
+        polishedAt,
+      ),
+    };
+  }
+}
+
+async function requestDeepSeekTicketEventSummaries(
+  context: unknown,
+  retry?: { previousResponse: string; validationError: string },
+) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY is not configured.");
+  }
+  const messages = [
+    { role: "system", content: TICKET_EVENT_SUMMARY_PROMPT },
+    { role: "user", content: JSON.stringify(context, null, 2) },
+  ];
+  if (retry) {
+    messages.push(
+      { role: "assistant", content: retry.previousResponse },
+      {
+        role: "user",
+        content: [
+          "The previous response failed validation.",
+          `Validation error: ${retry.validationError}`,
+          "Return the full corrected JSON object only.",
+          "Keep ticket_uuid, ticket_id, event grouping, and related_event_uuids unless the validation error explicitly requires changing them.",
+          "If a summary title caused the failure, rewrite only the title into a subject/status title of five words or fewer.",
+        ].join("\n"),
+      },
+    );
   }
 
   const response = await fetch(DEEPSEEK_CHAT_COMPLETIONS_URL, {
@@ -169,10 +313,7 @@ async function requestDeepSeekTicketEventSummaries(context: unknown) {
     body: JSON.stringify({
       model: "deepseek-v4-pro",
       temperature: 0.1,
-      messages: [
-        { role: "system", content: TICKET_EVENT_SUMMARY_PROMPT },
-        { role: "user", content: JSON.stringify(context, null, 2) },
-      ],
+      messages,
     }),
   });
 
@@ -187,7 +328,7 @@ async function requestDeepSeekTicketEventSummaries(context: unknown) {
   if (!content) {
     throw new Error("DeepSeek returned an empty AI Polish result.");
   }
-  return parseAiJson(content);
+  return content;
 }
 
 function parseAiJson(content: string): RawAiTicketEventSummaries {
@@ -317,6 +458,22 @@ function normalizeAiSummary(
     throw new Error(`AI Polish returned an overlong summary for ${ticket.id}.`);
   }
 
+  const title = cleanText(raw.title);
+  if (!title) {
+    throw new Error(`AI Polish returned an empty summary title for ${ticket.id}.`);
+  }
+  if (title.length > MAX_SUMMARY_TITLE_LENGTH) {
+    throw new Error(`AI Polish returned an overlong summary title for ${ticket.id}.`);
+  }
+  if (title.split(/\s+/).filter(Boolean).length > MAX_SUMMARY_TITLE_WORDS) {
+    throw new Error(`AI Polish summary title for ${ticket.id} must be five words or fewer.`);
+  }
+  if (sameTitleAsMessageOpening(title, message)) {
+    throw new Error(
+      `AI Polish summary title for ${ticket.id} must not copy the opening words of the message.`,
+    );
+  }
+
   if (!Array.isArray(raw.related_event_uuids) || raw.related_event_uuids.length === 0) {
     throw new Error(`AI Polish summary for ${ticket.id} must reference events.`);
   }
@@ -342,6 +499,7 @@ function normalizeAiSummary(
 
   return {
     uuid,
+    title,
     message,
     related_event_uuids: relatedEventUuids,
   };
@@ -420,6 +578,7 @@ function normalizeStoredSummary(raw: unknown): TicketEventSummary | null {
   }
   return {
     uuid,
+    title: cleanText(raw.title) || fallbackSummaryTitle(message),
     message,
     related_event_uuids: Array.isArray(raw.related_event_uuids)
       ? raw.related_event_uuids.map(cleanText).filter(Boolean)
@@ -470,6 +629,28 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unknown AI Polish error.";
+}
+
+function sameTitleAsMessageOpening(title: string, message: string) {
+  const titleWords = normalizedWords(title);
+  if (titleWords.length === 0) {
+    return false;
+  }
+  const messageOpening = normalizedWords(message).slice(0, titleWords.length);
+  return titleWords.join(" ") === messageOpening.join(" ");
+}
+
+function normalizedWords(value: string) {
+  return value
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
 const TICKET_EVENT_SUMMARY_PROMPT = `
 You polish raw technical support ticket events into concise Event Summaries.
 
@@ -482,6 +663,7 @@ The JSON object must have this shape:
       "ticket_id": "existing ticket_id",
       "summaries": [
         {
+          "title": "brief subject/status title",
           "message": "concise polished business English summary",
           "related_event_uuids": ["event_uuid"]
         }
@@ -497,7 +679,11 @@ Rules:
 - Each current event_uuid must appear exactly once in the summaries for the same ticket.
 - Do not reference event UUIDs or ticket UUIDs that are not provided.
 - Do not include summary UUIDs. The application assigns and preserves summary UUIDs after validation.
+- Give each summary a short English title of five words or fewer.
+- The title must describe the subject or status, not copy the first words of the message.
+- Good title examples: "GMS Requirement Confirmed", "Certification Still Pending", "SDK Delivered", "Customer NFC Issue".
 - Preserve previous wording when the related event group still represents the same meaning.
+- Preserve previous titles only when they already satisfy the current title rules.
 - Update wording only when new or changed raw events materially change the meaning.
 - Remove summaries whose related events no longer exist.
 - Keep each message brief, polished, and management-readable, but do not force an unnatural template.
@@ -505,6 +691,16 @@ Rules:
 - Do not copy raw messages verbatim. Abstract noisy chat text into clear business English.
 - Avoid exposing credentials, SSH keys, private server details, and long technical dumps unless the detail is essential to understanding the support status.
 `;
+
+function fallbackSummaryTitle(message: string) {
+  const words = message
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, MAX_SUMMARY_TITLE_WORDS);
+  return words.join(" ") || "Summary";
+}
 
 export class TicketEventSummaryNotFoundError extends Error {
   constructor(message: string) {

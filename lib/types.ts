@@ -152,6 +152,7 @@ export type ReleaseNoteRow = {
 
 export type TicketEventSummary = {
   uuid: string;
+  title: string;
   message: string;
   related_event_uuids: string[];
 };
