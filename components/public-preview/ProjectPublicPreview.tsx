@@ -9,6 +9,7 @@ import type {
   Requirement,
   RequirementStatus,
   Ticket,
+  TicketEventSummariesFile,
   TicketStatus,
 } from "@/lib/types";
 import {
@@ -37,6 +38,11 @@ import {
   RequirementStatusBadge,
   StatusBadge,
 } from "@/components/projects-workspace/ui";
+import {
+  hasDisplayableTicketEventSummaries,
+  TicketEventSummaryCard,
+  ticketEventSummaryForTicket,
+} from "@/components/projects-workspace/tickets/TicketEventSummaries";
 
 type PreviewTab = "overview" | "release" | "tickets" | "requirements";
 type TicketPreviewFilter =
@@ -81,15 +87,18 @@ export default function ProjectPublicPreview({
   requirements,
   tickets,
   releaseRecords,
+  ticketEventSummaries,
 }: {
   project: ProjectInfo;
   overview: Overview;
   requirements: Requirement[];
   tickets: Ticket[];
   releaseRecords: ReleaseRecord[];
+  ticketEventSummaries: TicketEventSummariesFile;
 }) {
   const [tab, setTab] = useState<PreviewTab>("overview");
   const [query, setQuery] = useState("");
+  const [aiEnhancedTickets, setAiEnhancedTickets] = useState(true);
   const [ticketFilter, setTicketFilter] = useState<TicketPreviewFilter>("all");
   const [requirementFilter, setRequirementFilter] =
     useState<RequirementPreviewFilter>("all");
@@ -191,6 +200,9 @@ export default function ProjectPublicPreview({
             tickets={filteredTickets}
             totalTickets={tickets.length}
             filtering={query.trim().length > 0 || ticketFilter !== "all"}
+            ticketEventSummaries={ticketEventSummaries}
+            aiEnhanced={aiEnhancedTickets}
+            onAiEnhancedChange={setAiEnhancedTickets}
           />
         ) : (
           <RequirementsPreview
@@ -600,21 +612,63 @@ function TicketsPreview({
   tickets,
   totalTickets,
   filtering,
+  ticketEventSummaries,
+  aiEnhanced,
+  onAiEnhancedChange,
 }: {
   tickets: Ticket[];
   totalTickets: number;
   filtering: boolean;
+  ticketEventSummaries: TicketEventSummariesFile;
+  aiEnhanced: boolean;
+  onAiEnhancedChange: (enabled: boolean) => void;
 }) {
   return (
     <section className="mt-5">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-900">Tickets</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">Tickets</h2>
+          <span className="text-xs text-slate-500">
+            {visibleCountText(tickets.length, totalTickets)}
+          </span>
+        </div>
+        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm">
+          <input
+            type="checkbox"
+            checked={aiEnhanced}
+            onChange={(event) => onAiEnhancedChange(event.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          <span>AI Enhanced View [{aiEnhanced ? "on" : "off"}]</span>
+        </label>
+      </div>
+      <div className="mb-3 flex items-center justify-end">
         <span className="text-xs text-slate-500">
-          {visibleCountText(tickets.length, totalTickets)}
+          Last AI Polish:{" "}
+          {ticketEventSummaries.last_polished_at
+            ? formatDateTimeFull(ticketEventSummaries.last_polished_at)
+            : "Never"}
         </span>
       </div>
       <div className="space-y-3">
         {tickets.map((ticket) => {
+          const summaryTicket = ticketEventSummaryForTicket(
+            ticketEventSummaries,
+            ticket,
+          );
+          const showAiCard =
+            aiEnhanced &&
+            hasDisplayableTicketEventSummaries(ticket, summaryTicket);
+          if (showAiCard) {
+            return (
+              <TicketEventSummaryCard
+                key={ticket.id}
+                ticket={ticket}
+                summaryTicket={summaryTicket}
+              />
+            );
+          }
+
           const latestEvent = latestTicketEvent(ticket.events);
           return (
             <article
