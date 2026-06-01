@@ -125,9 +125,6 @@ export function TicketEventSummaryCard({
                 {ticket.events.length === 1 ? "event" : "events"}
               </div>
             </div>
-            <span className="shrink-0 rounded-md border border-cyan-200 bg-white px-2 py-1 text-xs font-medium text-cyan-700 shadow-sm">
-              Open
-            </span>
           </div>
         </div>
 

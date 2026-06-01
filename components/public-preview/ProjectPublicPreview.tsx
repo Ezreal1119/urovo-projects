@@ -597,6 +597,8 @@ function ReleaseRecordsPreview({
   totalReleaseRecords: number;
   filtering: boolean;
 }) {
+  const releaseGroups = groupReleaseRecordsByModel(releaseRecords);
+
   return (
     <section className="mt-5">
       <SectionHeader
@@ -605,57 +607,67 @@ function ReleaseRecordsPreview({
       />
       {releaseRecords.length > 0 ? (
         <div className="grid gap-3">
-          {releaseRecords.map((record) => (
+          {releaseGroups.map((group) => (
             <article
-              key={record.id}
+              key={group.model || "empty-model"}
               className="overflow-hidden rounded-lg border border-white/80 bg-white shadow-lg shadow-slate-200/60 ring-1 ring-slate-900/[0.04] transition hover:-translate-y-0.5 hover:shadow-xl hover:shadow-slate-300/50"
             >
               <div className="h-1 bg-gradient-to-r from-emerald-400 via-cyan-400 to-slate-200" />
               <div className="p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Model
                   </div>
                   <h3 className="mt-1 break-words text-base font-semibold text-slate-950 [overflow-wrap:anywhere]">
-                    {record.model || "-"}
+                    {group.model || "-"}
                   </h3>
                 </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  <span
-                    className={`rounded-md border px-2 py-1 text-xs font-medium ${
-                      record.release_date
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-amber-200 bg-amber-50 text-amber-800"
-                    }`}
-                  >
-                    {record.release_date ?? "Not Released"}
-                  </span>
-                  <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
-                    Order {record.order_count ?? "-"}
-                  </span>
-                </div>
-              </div>
+                <div className="mt-4 space-y-3">
+                  {group.records.map((record) => (
+                    <section
+                      key={record.id}
+                      className="rounded-lg border border-cyan-100 bg-cyan-50/40 p-3 shadow-sm shadow-cyan-100/60"
+                    >
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <span
+                          className={`rounded-md border px-2 py-1 text-xs font-medium ${
+                            record.release_date
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : "border-amber-200 bg-amber-50 text-amber-800"
+                          }`}
+                        >
+                          {record.release_date ?? "Not Released"}
+                        </span>
+                        <span className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600">
+                          Order {record.order_count ?? "-"}
+                        </span>
+                      </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.35fr)]">
-                <div className="space-y-2 rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ffffff)] p-3 shadow-inner shadow-slate-100">
-                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Firmware
-                  </div>
-                  <FirmwareValue label="OS" value={record.firmware.os} />
-                  <FirmwareValue label="UFS" value={record.firmware.ufs} />
-                  <FirmwareValue label="SE" value={record.firmware.se} />
-                </div>
+                      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.35fr)]">
+                        <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 shadow-inner shadow-slate-100">
+                          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            Firmware
+                          </div>
+                          <FirmwareValue label="OS" value={record.firmware.os} />
+                          <FirmwareValue
+                            label="UFS"
+                            value={record.firmware.ufs}
+                          />
+                          <FirmwareValue label="SE" value={record.firmware.se} />
+                        </div>
 
-                <div className="rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ffffff)] p-3 shadow-inner shadow-slate-100">
-                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    ChangeLog
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]">
-                    {record.change_log || "No changelog."}
-                  </p>
+                        <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-inner shadow-slate-100">
+                          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            ChangeLog
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 [overflow-wrap:anywhere]">
+                            {record.change_log || "No changelog."}
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+                  ))}
                 </div>
-              </div>
               </div>
             </article>
           ))}
@@ -1216,6 +1228,17 @@ function filterPreviewReleaseRecords(
   }
 
   return releaseRecords.filter((record) => record.model === modelFilter);
+}
+
+function groupReleaseRecordsByModel(releaseRecords: ReleaseRecord[]) {
+  const groups = new Map<string, ReleaseRecord[]>();
+  for (const record of releaseRecords) {
+    const group = groups.get(record.model) ?? [];
+    group.push(record);
+    groups.set(record.model, group);
+  }
+
+  return Array.from(groups, ([model, records]) => ({ model, records }));
 }
 
 function filterPreviewRequirements(
