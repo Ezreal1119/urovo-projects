@@ -18,6 +18,7 @@ import { ReleaseModelPickerDialog, ReleaseRecordsDialog } from "./projects-works
 import { RequirementDrawer, RequirementModal, RequirementsWorkspace } from "./projects-workspace/requirements/RequirementsWorkspace";
 import { TicketCard, TicketDrawer, TicketModal } from "./projects-workspace/tickets/TicketsWorkspace";
 import { TicketEventSummaryCard, ticketEventSummaryForTicket } from "./projects-workspace/tickets/TicketEventSummaries";
+import { TicketGanttDialog } from "./projects-workspace/tickets/TicketGanttDialog";
 import { ProjectTreeGroup } from "./projects-workspace/sidebar/ProjectTreeGroup";
 import { Metric, Toast, Pagination } from "./projects-workspace/ui";
 import { AiAnalysisDialog, GenerateReportDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
@@ -80,6 +81,7 @@ export default function ProjectsWorkspace() {
     useState("");
   const [toast, setToast] = useState("");
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [showTicketGantt, setShowTicketGantt] = useState(false);
   const [showNewRequirement, setShowNewRequirement] = useState(false);
   const [showNewOverviewRequirement, setShowNewOverviewRequirement] =
     useState(false);
@@ -329,6 +331,19 @@ export default function ProjectsWorkspace() {
     if (filter === "all") {
       setGlobalQuery("");
     }
+  }
+
+  function focusTicketFromGantt(ticket: Ticket) {
+    if (selectedTicketId && !canDiscardTicketChanges()) {
+      return;
+    }
+    setShowTicketGantt(false);
+    setProjectMode("tickets");
+    setTicketFilter("all");
+    setGlobalQuery(ticket.id);
+    setTicketPage(1);
+    setSelectedTicketId("");
+    setSelectedTicketDirty(false);
   }
 
   function updateGlobalQuery(value: string) {
@@ -1705,6 +1720,13 @@ export default function ProjectsWorkspace() {
                         >
                           {ticketPolishing ? "Polishing..." : "Batch AI Polish"}
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowTicketGantt(true)}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+                        >
+                          Gantt
+                        </button>
                       </div>
                     </div>
                     {ticketEventSummariesError ? (
@@ -1902,6 +1924,14 @@ export default function ProjectsWorkspace() {
           saving={saving}
           onClose={() => setShowNewTicket(false)}
           onCreate={createTicket}
+        />
+      ) : null}
+
+      {showTicketGantt ? (
+        <TicketGanttDialog
+          tickets={tickets}
+          onClose={() => setShowTicketGantt(false)}
+          onFocusTicket={focusTicketFromGantt}
         />
       ) : null}
 
