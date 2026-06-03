@@ -1,6 +1,7 @@
 import type { DashboardData } from "@/lib/types";
 import type { DashboardFilter, DashboardRequirement, DashboardTicket } from "./types";
 import { requirementStatusLabels } from "./labels";
+import { hasSearchQuery, matchesSearchQuery, parseSearchQuery } from "./search-query";
 
 export function flattenDashboardTickets(
   data: DashboardData | null,
@@ -31,7 +32,7 @@ export function filterDashboardTickets(
   filter: DashboardFilter,
   query: string,
 ) {
-  const normalizedQuery = query.trim().toLowerCase();
+  const searchQuery = parseSearchQuery(query);
   return tickets.filter((item) => {
     const matchesFilter =
       filter === "all" ||
@@ -50,23 +51,24 @@ export function filterDashboardTickets(
       return false;
     }
 
-    if (!normalizedQuery) {
+    if (!hasSearchQuery(searchQuery)) {
       return true;
     }
 
-    return [
-      item.project.project_name,
-      item.folder,
-      item.ticket.id,
+    return matchesSearchQuery(
+      searchQuery,
+      [
+        item.project.project_name,
+        item.folder,
+        item.ticket.id,
+        item.ticket.title,
+        item.ticket.summary,
+        item.ticket.next_action,
+        item.ticket.status,
+        item.ticket.priority,
+      ].join(" "),
       item.ticket.title,
-      item.ticket.summary,
-      item.ticket.next_action,
-      item.ticket.status,
-      item.ticket.priority,
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery);
+    );
   });
 }
 
@@ -75,7 +77,7 @@ export function filterDashboardRequirements(
   filter: DashboardFilter,
   query: string,
 ) {
-  const normalizedQuery = query.trim().toLowerCase();
+  const searchQuery = parseSearchQuery(query);
   return requirements.filter((item) => {
     const matchesFilter =
       filter === "all" ||
@@ -92,26 +94,27 @@ export function filterDashboardRequirements(
       return false;
     }
 
-    if (!normalizedQuery) {
+    if (!hasSearchQuery(searchQuery)) {
       return true;
     }
 
-    return [
-      item.project.project_name,
-      item.folder,
-      item.requirement.id,
+    return matchesSearchQuery(
+      searchQuery,
+      [
+        item.project.project_name,
+        item.folder,
+        item.requirement.id,
+        item.requirement.title,
+        item.requirement.details,
+        item.requirement.status,
+        requirementStatusLabels[item.requirement.status],
+        ...item.requirement.related_tickets,
+        ...item.requirement.timeline.map(
+          (entry) => `${entry.time} ${entry.remark}`,
+        ),
+      ].join(" "),
       item.requirement.title,
-      item.requirement.details,
-      item.requirement.status,
-      requirementStatusLabels[item.requirement.status],
-      ...item.requirement.related_tickets,
-      ...item.requirement.timeline.map(
-        (entry) => `${entry.time} ${entry.remark}`,
-      ),
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedQuery);
+    );
   });
 }
 

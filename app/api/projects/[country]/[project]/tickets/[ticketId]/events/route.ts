@@ -1,4 +1,5 @@
 import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
+import { scheduleAutoTicketAiPolish } from "@/lib/auto-ai-polish-queue";
 import {
   createEventPayload,
   projectKeyFromSegments,
@@ -41,7 +42,8 @@ export async function POST(request: Request, context: Context) {
         content: event.content,
       },
     ]);
-    return Response.json({ event, ticket }, { status: 201 });
+    const autoPolish = scheduleAutoTicketAiPolish(key, ticket.id);
+    return Response.json({ event, ticket, autoPolish }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }

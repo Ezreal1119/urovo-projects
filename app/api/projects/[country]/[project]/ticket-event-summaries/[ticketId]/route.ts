@@ -2,6 +2,7 @@ import {
   polishSingleTicketEventSummaries,
   TicketEventSummaryNotFoundError,
 } from "@/lib/ticket-event-summaries";
+import { cancelAutoTicketAiPolish } from "@/lib/auto-ai-polish-queue";
 import { projectKeyFromSegments } from "@/lib/projects";
 
 export const runtime = "nodejs";
@@ -14,6 +15,7 @@ export async function POST(_request: Request, context: Context) {
   try {
     const { country, project, ticketId } = await context.params;
     const key = projectKeyFromSegments([country, project]);
+    cancelAutoTicketAiPolish(key, ticketId);
     return Response.json(await polishSingleTicketEventSummaries(key, ticketId));
   } catch (error) {
     if (error instanceof TicketEventSummaryNotFoundError) {

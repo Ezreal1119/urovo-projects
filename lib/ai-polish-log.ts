@@ -7,7 +7,7 @@ const AI_POLISH_LOG_FILE = path.join(AI_POLISH_LOG_DIR, "ai-polish-interactions.
 
 type AiPolishLogEntry = {
   project_key: string;
-  mode: "batch" | "single-ticket";
+  mode: "batch" | "single-ticket" | "auto-single-ticket";
   ticket_id?: string;
   prompt: string;
   context: unknown;

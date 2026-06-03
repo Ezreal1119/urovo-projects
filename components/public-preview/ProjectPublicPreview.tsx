@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import Image from "next/image";
 import type {
   Overview,
@@ -35,6 +36,7 @@ import {
 import {
   ticketEventSummaryForTicket,
 } from "@/components/projects-workspace/tickets/TicketEventSummaries";
+import { TicketGanttDialog } from "@/components/projects-workspace/tickets/TicketGanttDialog";
 
 type PreviewTab = "overview" | "release" | "tickets" | "requirements";
 type TicketPreviewFilter =
@@ -104,6 +106,7 @@ export default function ProjectPublicPreview({
   const [tab, setTab] = useState<PreviewTab>("overview");
   const [query, setQuery] = useState("");
   const [ticketFilter, setTicketFilter] = useState<TicketPreviewFilter>("all");
+  const [showTicketGantt, setShowTicketGantt] = useState(false);
   const [requirementFilter, setRequirementFilter] =
     useState<RequirementPreviewFilter>("all");
   const [overviewModelFilter, setOverviewModelFilter] =
@@ -144,6 +147,12 @@ export default function ProjectPublicPreview({
     setTab("tickets");
     setTicketFilter("all");
     setQuery(searchTextForTitle(ticket.title));
+  };
+  const focusTicketFromGantt = (ticket: Ticket) => {
+    setShowTicketGantt(false);
+    setTab("tickets");
+    setTicketFilter("all");
+    setQuery(ticket.id);
   };
   const handleTabChange = (nextTab: PreviewTab) => {
     if (nextTab !== tab) {
@@ -242,6 +251,7 @@ export default function ProjectPublicPreview({
             totalTickets={tickets.length}
             filtering={query.trim().length > 0 || ticketFilter !== "all"}
             ticketEventSummaries={ticketEventSummaries}
+            onOpenGantt={() => setShowTicketGantt(true)}
           />
         ) : (
           <RequirementsPreview
@@ -253,6 +263,13 @@ export default function ProjectPublicPreview({
           />
         )}
       </div>
+      {showTicketGantt ? (
+        <TicketGanttDialog
+          tickets={tickets}
+          onClose={() => setShowTicketGantt(false)}
+          onFocusTicket={focusTicketFromGantt}
+        />
+      ) : null}
     </main>
   );
 }
@@ -643,7 +660,7 @@ function ReleaseRecordsPreview({
                         </span>
                       </div>
 
-                      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(320px,0.95fr)_minmax(0,1.35fr)]">
+                      <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                         <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 shadow-inner shadow-slate-100">
                           <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                             Firmware
@@ -701,18 +718,28 @@ function TicketsPreview({
   totalTickets,
   filtering,
   ticketEventSummaries,
+  onOpenGantt,
 }: {
   tickets: Ticket[];
   totalTickets: number;
   filtering: boolean;
   ticketEventSummaries: TicketEventSummariesFile;
+  onOpenGantt: () => void;
 }) {
   return (
     <section className="mt-5">
       <SectionHeader
         title="Ticket Dashboard"
         count={visibleCountText(tickets.length, totalTickets)}
-      />
+      >
+        <button
+          type="button"
+          onClick={onOpenGantt}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-950"
+        >
+          Gantt
+        </button>
+      </SectionHeader>
       <div className="grid gap-3">
         {tickets.map((ticket) => {
           const summaryTicket = ticketEventSummaryForTicket(
@@ -790,9 +817,6 @@ function PublicTicketEventSummaryCard({
                 {ticket.events.length === 1 ? "event" : "events"}
               </div>
             </div>
-            <span className="shrink-0 rounded-md border border-cyan-200 bg-white px-2 py-1 text-xs font-medium text-cyan-700 shadow-sm">
-              Open
-            </span>
           </div>
         </button>
 
@@ -1074,16 +1098,27 @@ function RequirementsPreview({
   );
 }
 
-function SectionHeader({ title, count }: { title: string; count: string }) {
+function SectionHeader({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count: string;
+  children?: ReactNode;
+}) {
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
         <span className="h-2 w-2 rounded-full bg-cyan-500 shadow-sm shadow-cyan-300" />
         {title}
       </h2>
-      <span className="rounded-md border border-white/80 bg-white/90 px-2 py-1 text-xs font-medium text-slate-500 shadow-sm shadow-slate-200">
-        {count}
-      </span>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {children}
+        <span className="rounded-md border border-white/80 bg-white/90 px-2 py-1 text-xs font-medium text-slate-500 shadow-sm shadow-slate-200">
+          {count}
+        </span>
+      </div>
     </div>
   );
 }

@@ -8,9 +8,10 @@ import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/cons
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
 import { emptyOverview, eventDraftForApi, overviewRequirementDraftForApi, requirementDraftForApi, requirementTimelineDraftForApi, ticketToDraft } from "./projects-workspace/drafts";
-import { createUuid } from "./projects-workspace/formatters";
+import { createUuid, formatDateTimeFull } from "./projects-workspace/formatters";
 import { requirementStatusLabels, dashboardModeLabel, projectModeLabel } from "./projects-workspace/labels";
 import { readRecentProjects } from "./projects-workspace/recent-projects";
+import { hasSearchQuery, matchesSearchQuery, parseSearchQuery } from "./projects-workspace/search-query";
 import { buildProjectSummary } from "./projects-workspace/summary";
 import { DashboardView, ReleaseNotesDialog } from "./projects-workspace/dashboard/DashboardView";
 import { ProjectHeader, OverviewRequirementDrawer, OverviewRequirementModal, OverviewWorkspace } from "./projects-workspace/overview/OverviewWorkspace";
@@ -30,11 +31,62 @@ type AiAnalysisTarget = {
   hasUnsavedChanges: boolean;
 };
 
+type AutoAiPolishJob = {
+  projectKey: string;
+  ticketId: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  scheduledFor?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+};
+
 const emptyTicketEventSummaries: TicketEventSummariesFile = {
   version: 1,
   last_polished_at: "",
   tickets: [],
 };
+
+function isActiveAutoPolishJob(job: AutoAiPolishJob) {
+  return job.status === "pending" || job.status === "running";
+}
+
+function activeAutoPolishJobs(jobs: AutoAiPolishJob[]) {
+  return jobs.filter(isActiveAutoPolishJob);
+}
+
+function upsertAutoPolishJob(
+  jobs: AutoAiPolishJob[],
+  nextJob: AutoAiPolishJob,
+) {
+  return [...jobs.filter((job) => job.ticketId !== nextJob.ticketId), nextJob]
+    .filter(isActiveAutoPolishJob)
+    .sort(sortAutoPolishJobs);
+}
+
+function sortAutoPolishJobs(a: AutoAiPolishJob, b: AutoAiPolishJob) {
+  const time =
+    (a.scheduledFor ?? a.startedAt ?? "").localeCompare(
+      b.scheduledFor ?? b.startedAt ?? "",
+    );
+  if (time !== 0) {
+    return time;
+  }
+  return a.ticketId.localeCompare(b.ticketId);
+}
+
+function autoPolishStatusText(jobs: AutoAiPolishJob[]) {
+  const pending = jobs
+    .filter((job) => job.status === "pending")
+    .map(
+      (job) =>
+        `${job.ticketId} scheduled for ${formatDateTimeFull(job.scheduledFor ?? "")}`,
+    );
+  const running = jobs
+    .filter((job) => job.status === "running")
+    .map((job) => `${job.ticketId} running`);
+  return [...running, ...pending].join(" | ");
+}
 
 export default function ProjectsWorkspace() {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
@@ -76,6 +128,7 @@ export default function ProjectsWorkspace() {
   const [saving, setSaving] = useState(false);
   const [ticketPolishing, setTicketPolishing] = useState(false);
   const [polishingTicketId, setPolishingTicketId] = useState("");
+  const [autoPolishJobs, setAutoPolishJobs] = useState<AutoAiPolishJob[]>([]);
   const [error, setError] = useState("");
   const [ticketEventSummariesError, setTicketEventSummariesError] =
     useState("");
@@ -119,6 +172,7 @@ export default function ProjectsWorkspace() {
   const [requirementDeleteBlocker, setRequirementDeleteBlocker] =
     useState<RequirementDeleteBlocker | null>(null);
   const loadProjectRequestId = useRef(0);
+  const hasActiveAutoPolishJobs = autoPolishJobs.some(isActiveAutoPolishJob);
 
   const selectedTicket =
     tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
@@ -170,7 +224,7 @@ export default function ProjectsWorkspace() {
   }, [filteredProjects]);
 
   const filteredTickets = useMemo(() => {
-    const query = globalQuery.trim().toLowerCase();
+    const searchQuery = parseSearchQuery(globalQuery);
     return tickets.filter((ticket) => {
       const matchesDashboardFilter =
         ticketFilter === "all" ||
@@ -184,64 +238,67 @@ export default function ProjectsWorkspace() {
         return false;
       }
 
-      if (!query) {
+      if (!hasSearchQuery(searchQuery)) {
         return true;
       }
 
-      return [
-        ticket.id,
+      return matchesSearchQuery(
+        searchQuery,
+        [
+          ticket.id,
+          ticket.title,
+          ticket.summary,
+          ticket.next_action,
+          ticket.status,
+          ticket.priority,
+        ].join(" "),
         ticket.title,
-        ticket.summary,
-        ticket.next_action,
-        ticket.status,
-        ticket.priority,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
+      );
     });
   }, [tickets, globalQuery, ticketFilter]);
 
   const filteredRequirements = useMemo(() => {
-    const query = globalQuery.trim().toLowerCase();
-    if (!query) {
+    const searchQuery = parseSearchQuery(globalQuery);
+    if (!hasSearchQuery(searchQuery)) {
       return requirements;
     }
     return requirements.filter((requirement) =>
-      [
-        requirement.id,
+      matchesSearchQuery(
+        searchQuery,
+        [
+          requirement.id,
+          requirement.title,
+          requirement.details,
+          requirement.status,
+          requirementStatusLabels[requirement.status],
+          ...requirement.related_tickets,
+          ...requirement.timeline.map((item) => `${item.time} ${item.remark}`),
+        ].join(" "),
         requirement.title,
-        requirement.details,
-        requirement.status,
-        requirementStatusLabels[requirement.status],
-        ...requirement.related_tickets,
-        ...requirement.timeline.map((item) => `${item.time} ${item.remark}`),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+      ),
     );
   }, [requirements, globalQuery]);
 
   const filteredOverviewRequirements = useMemo(() => {
-    const query = globalQuery.trim().toLowerCase();
-    if (!query) {
+    const searchQuery = parseSearchQuery(globalQuery);
+    if (!hasSearchQuery(searchQuery)) {
       return overview.requirements;
     }
     return overview.requirements.filter((requirement) =>
-      [
-        overview.description,
-        ...overview.models,
-        ...overview.others,
-        requirement.id,
-        requirement.product,
-        ...requirement.simple_requirements,
-        ...requirement.linked_requirements,
-        requirement.remark,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+      matchesSearchQuery(
+        searchQuery,
+        [
+          overview.description,
+          ...overview.models,
+          ...overview.others,
+          requirement.id,
+          requirement.product,
+          ...requirement.simple_requirements,
+          ...requirement.linked_requirements,
+          requirement.remark,
+        ].join(" "),
+        requirement.simple_requirements.join(" "),
+      ),
     );
   }, [overview, globalQuery]);
 
@@ -465,6 +522,7 @@ export default function ProjectsWorkspace() {
     setTickets([]);
     setTicketEventSummaries(emptyTicketEventSummaries);
     setTicketEventSummariesError("");
+    setAutoPolishJobs([]);
     setRequirements([]);
     setShowReleaseModelPicker(false);
     setReleaseModel("");
@@ -501,6 +559,20 @@ export default function ProjectsWorkspace() {
           return;
         }
         setTicketEventSummaries(emptyTicketEventSummaries);
+        setTicketEventSummariesError((requestError as Error).message);
+      }
+      try {
+        const autoPolishData = await api<{ jobs: AutoAiPolishJob[] }>(
+          `${projectApiPath(folder)}/ticket-event-summaries/status`,
+        );
+        if (loadProjectRequestId.current !== requestId) {
+          return;
+        }
+        setAutoPolishJobs(activeAutoPolishJobs(autoPolishData.jobs));
+      } catch (requestError) {
+        if (loadProjectRequestId.current !== requestId) {
+          return;
+        }
         setTicketEventSummariesError((requestError as Error).message);
       }
       const overviewData = await api<{ overview: Overview }>(
@@ -687,6 +759,7 @@ export default function ProjectsWorkspace() {
       });
       setTickets(data.tickets);
       setTicketEventSummaries(data.summaries);
+      setAutoPolishJobs([]);
       refreshDashboardQuietly();
       showToast("Batch AI Polish finished.");
     } catch (requestError) {
@@ -713,6 +786,9 @@ export default function ProjectsWorkspace() {
       );
       setTickets(data.tickets);
       setTicketEventSummaries(data.summaries);
+      setAutoPolishJobs((current) =>
+        current.filter((job) => job.ticketId !== ticketId),
+      );
       refreshDashboardQuietly();
       showToast(`AI Polish finished for ${ticketId}.`);
     } catch (requestError) {
@@ -766,6 +842,66 @@ export default function ProjectsWorkspace() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedFolder || !hasActiveAutoPolishJobs) {
+      return;
+    }
+    let cancelled = false;
+
+    async function refreshAutoPolishStatus() {
+      try {
+        const statusData = await api<{ jobs: AutoAiPolishJob[] }>(
+          `${projectApiPath(selectedFolder)}/ticket-event-summaries/status`,
+        );
+        if (cancelled) {
+          return;
+        }
+
+        const succeeded = statusData.jobs.some(
+          (job) => job.status === "succeeded",
+        );
+        const failed = statusData.jobs.filter((job) => job.status === "failed");
+        setAutoPolishJobs(activeAutoPolishJobs(statusData.jobs));
+
+        if (failed.length > 0) {
+          setTicketEventSummariesError(
+            failed
+              .map(
+                (job) =>
+                  `${job.ticketId}: ${job.error || "Automatic AI Polish failed."}`,
+              )
+              .join("\n"),
+          );
+        }
+
+        if (succeeded) {
+          const summariesData = await api<{
+            summaries: TicketEventSummariesFile;
+          }>(`${projectApiPath(selectedFolder)}/ticket-event-summaries`);
+          if (!cancelled) {
+            setTicketEventSummaries(summariesData.summaries);
+            if (failed.length === 0) {
+              setTicketEventSummariesError("");
+            }
+          }
+        }
+      } catch (requestError) {
+        if (!cancelled) {
+          setTicketEventSummariesError((requestError as Error).message);
+        }
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshAutoPolishStatus();
+    }, 5_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [hasActiveAutoPolishJobs, selectedFolder]);
 
   async function createTicket(draft: TicketDraft) {
     if (!selectedFolder) {
@@ -878,7 +1014,7 @@ export default function ProjectsWorkspace() {
   async function addEvent(ticketId: string, draft: EventDraft) {
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket }>(
+      const data = await api<{ ticket: Ticket; autoPolish?: AutoAiPolishJob }>(
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events`,
         {
           method: "POST",
@@ -890,6 +1026,13 @@ export default function ProjectsWorkspace() {
           ticket.id === ticketId ? data.ticket : ticket,
         ),
       );
+      const autoPolish = data.autoPolish;
+      if (autoPolish) {
+        setAutoPolishJobs((current) =>
+          upsertAutoPolishJob(current, autoPolish),
+        );
+        showToast(`AI Polish scheduled for ${ticketId}.`);
+      }
       refreshDashboardQuietly();
     } finally {
       setSaving(false);
@@ -1729,6 +1872,11 @@ export default function ProjectsWorkspace() {
                         </button>
                       </div>
                     </div>
+                    {autoPolishJobs.length > 0 ? (
+                      <div className="mb-3 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm text-cyan-800">
+                        Auto AI Polish: {autoPolishStatusText(autoPolishJobs)}
+                      </div>
+                    ) : null}
                     {ticketEventSummariesError ? (
                       <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                         {ticketEventSummariesError}

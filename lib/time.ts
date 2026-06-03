@@ -12,7 +12,11 @@ const beijingDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 export function beijingNowIsoString() {
-  return datePartsToIso(beijingDateTimeFormatter.formatToParts(new Date()));
+  return beijingIsoStringForDate(new Date());
+}
+
+export function beijingIsoStringForDate(date: Date) {
+  return datePartsToIso(beijingDateTimeFormatter.formatToParts(date));
 }
 
 export function beijingNowLogTime() {

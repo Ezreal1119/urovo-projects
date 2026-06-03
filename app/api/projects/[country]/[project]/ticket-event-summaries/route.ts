@@ -2,6 +2,7 @@ import {
   polishTicketEventSummaries,
   readTicketEventSummaries,
 } from "@/lib/ticket-event-summaries";
+import { cancelProjectAutoTicketAiPolish } from "@/lib/auto-ai-polish-queue";
 import { projectKeyFromSegments } from "@/lib/projects";
 
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ export async function POST(_request: Request, context: Context) {
   try {
     const { country, project } = await context.params;
     const key = projectKeyFromSegments([country, project]);
+    cancelProjectAutoTicketAiPolish(key);
     return Response.json(await polishTicketEventSummaries(key));
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 500 });

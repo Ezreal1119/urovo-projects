@@ -31,6 +31,10 @@ type PolishResult = {
   summaries: TicketEventSummariesFile;
 };
 
+type SingleTicketPolishOptions = {
+  mode?: "single-ticket" | "auto-single-ticket";
+};
+
 type ValidatedAiTicketEventSummaries = {
   summaries: TicketEventSummaryTicket[];
   rawResponse: string;
@@ -41,6 +45,8 @@ type ValidatedAiTicketEventSummaries = {
 type RawAiTicketEventSummaries = {
   tickets?: unknown;
 };
+
+const polishLocks = new Map<string, Promise<void>>();
 
 export async function readTicketEventSummaries(
   key: string,
@@ -58,6 +64,12 @@ export async function readTicketEventSummaries(
 }
 
 export async function polishTicketEventSummaries(
+  key: string,
+): Promise<PolishResult> {
+  return withProjectPolishLock(key, () => polishTicketEventSummariesUnlocked(key));
+}
+
+async function polishTicketEventSummariesUnlocked(
   key: string,
 ): Promise<PolishResult> {
   const project = await readProject(key);
@@ -121,7 +133,19 @@ export async function polishTicketEventSummaries(
 export async function polishSingleTicketEventSummaries(
   key: string,
   ticketId: string,
+  options: SingleTicketPolishOptions = {},
 ): Promise<PolishResult> {
+  return withProjectPolishLock(key, () =>
+    polishSingleTicketEventSummariesUnlocked(key, ticketId, options),
+  );
+}
+
+async function polishSingleTicketEventSummariesUnlocked(
+  key: string,
+  ticketId: string,
+  options: SingleTicketPolishOptions,
+): Promise<PolishResult> {
+  const mode = options.mode ?? "single-ticket";
   const project = await readProject(key);
   const { tickets } = await backfillProjectUuids(key);
   const ticket = tickets.find((current) => current.id === ticketId);
@@ -170,7 +194,7 @@ export async function polishSingleTicketEventSummaries(
 
     await appendAiPolishInteraction({
       project_key: key,
-      mode: "single-ticket",
+      mode,
       ticket_id: ticket.id,
       prompt: TICKET_EVENT_SUMMARY_PROMPT,
       context: aiContext,
@@ -185,7 +209,7 @@ export async function polishSingleTicketEventSummaries(
   } catch (error) {
     await appendAiPolishInteraction({
       project_key: key,
-      mode: "single-ticket",
+      mode,
       ticket_id: ticket.id,
       prompt: TICKET_EVENT_SUMMARY_PROMPT,
       context: aiContext,
@@ -196,6 +220,27 @@ export async function polishSingleTicketEventSummaries(
       error: errorMessage(error),
     });
     throw error;
+  }
+}
+
+async function withProjectPolishLock<T>(
+  key: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const previous = polishLocks.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  const lock = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  polishLocks.set(key, lock);
+
+  try {
+    return await next;
+  } finally {
+    if (polishLocks.get(key) === lock) {
+      polishLocks.delete(key);
+    }
   }
 }
 
