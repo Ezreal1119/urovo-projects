@@ -52,6 +52,7 @@ export default async function PublicPreviewPage({
 
   return (
     <ProjectPublicPreview
+      folder={item.folder}
       project={item.project}
       overview={overview}
       requirements={requirements}

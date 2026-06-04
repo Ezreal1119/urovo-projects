@@ -255,14 +255,6 @@ export function ProjectAskAiDialog({
         <div className="border-b border-cyan-100 bg-[linear-gradient(135deg,#ecfeff_0%,#f8fafc_48%,#ecfdf5_100%)] px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-cyan-200 bg-white/80 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-700 shadow-sm">
-                  Project AI
-                </span>
-                <span className="rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
-                  DeepSeek Flash
-                </span>
-              </div>
               <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
                 Ask AI
               </h2>

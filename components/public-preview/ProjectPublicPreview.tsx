@@ -37,6 +37,12 @@ import {
   ticketEventSummaryForTicket,
 } from "@/components/projects-workspace/tickets/TicketEventSummaries";
 import { TicketGanttDialog } from "@/components/projects-workspace/tickets/TicketGanttDialog";
+import { ProjectAskAiDialog } from "@/components/projects-workspace/dialogs/Dialogs";
+import { api, projectApiPath } from "@/components/projects-workspace/api-client";
+import type {
+  ProjectAskAiMessage,
+  ProjectAskAiResponse,
+} from "@/components/projects-workspace/types";
 
 type PreviewTab = "overview" | "release" | "tickets" | "requirements";
 type TicketPreviewFilter =
@@ -89,6 +95,7 @@ const previewTabs: { value: PreviewTab; label: string }[] = [
 const MODEL_FILTER_ALL = "__all_models__";
 
 export default function ProjectPublicPreview({
+  folder,
   project,
   overview,
   requirements,
@@ -96,6 +103,7 @@ export default function ProjectPublicPreview({
   releaseRecords,
   ticketEventSummaries,
 }: {
+  folder: string;
   project: ProjectInfo;
   overview: Overview;
   requirements: Requirement[];
@@ -113,6 +121,12 @@ export default function ProjectPublicPreview({
     useState(MODEL_FILTER_ALL);
   const [releaseModelFilter, setReleaseModelFilter] =
     useState(MODEL_FILTER_ALL);
+  const [showProjectAskAi, setShowProjectAskAi] = useState(false);
+  const [projectAskAiMessages, setProjectAskAiMessages] = useState<
+    ProjectAskAiMessage[]
+  >([]);
+  const [projectAskAiLoading, setProjectAskAiLoading] = useState(false);
+  const [projectAskAiError, setProjectAskAiError] = useState("");
   const overviewModelOptions = useMemo(
     () => exactModelOptions(overview.requirements.map((demand) => demand.product)),
     [overview.requirements],
@@ -160,13 +174,67 @@ export default function ProjectPublicPreview({
     }
     setTab(nextTab);
   };
+  const openProjectAskAi = () => {
+    setShowProjectAskAi(true);
+    setProjectAskAiError("");
+  };
+  const closeProjectAskAi = () => {
+    if (projectAskAiLoading) {
+      return;
+    }
+    setShowProjectAskAi(false);
+    setProjectAskAiMessages([]);
+    setProjectAskAiError("");
+  };
+  const askProjectAi = async (prompt: string) => {
+    const userMessage: ProjectAskAiMessage = {
+      role: "user",
+      content: prompt.trim(),
+    };
+    const nextMessages = [...projectAskAiMessages, userMessage];
+    setProjectAskAiMessages(nextMessages);
+    setProjectAskAiError("");
+    setProjectAskAiLoading(true);
+    try {
+      const data = await api<ProjectAskAiResponse>(
+        `${projectApiPath(folder)}/ask-ai`,
+        {
+          method: "POST",
+          body: JSON.stringify({ messages: nextMessages }),
+        },
+      );
+      setProjectAskAiMessages([
+        ...nextMessages,
+        { role: "assistant", content: data.answer },
+      ]);
+    } catch (requestError) {
+      setProjectAskAiError((requestError as Error).message);
+    } finally {
+      setProjectAskAiLoading(false);
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#edf7f6_44%,#f7f7fb_100%)] text-slate-950">
       <header className="sticky top-0 z-20 border-b border-white/70 bg-white/75 shadow-sm shadow-slate-200/70 backdrop-blur-xl">
         <div className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2 lg:px-6">
           <BrandLockup />
-          <TabSwitcher tab={tab} onChange={handleTabChange} />
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={openProjectAskAi}
+              disabled={projectAskAiLoading}
+              className="group h-10 shrink-0 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-emerald-400 p-px shadow-sm shadow-cyan-200/70 ring-1 ring-cyan-100 transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="flex h-full items-center gap-2 rounded-[0.7rem] bg-slate-950 px-3 text-sm font-semibold text-white transition group-hover:bg-slate-900">
+                <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100">
+                  AI
+                </span>
+                Ask AI
+              </span>
+            </button>
+            <TabSwitcher tab={tab} onChange={handleTabChange} />
+          </div>
         </div>
       </header>
 
@@ -268,6 +336,16 @@ export default function ProjectPublicPreview({
           tickets={tickets}
           onClose={() => setShowTicketGantt(false)}
           onFocusTicket={focusTicketFromGantt}
+        />
+      ) : null}
+      {showProjectAskAi ? (
+        <ProjectAskAiDialog
+          projectName={project.project_name}
+          messages={projectAskAiMessages}
+          loading={projectAskAiLoading}
+          error={projectAskAiError}
+          onClose={closeProjectAskAi}
+          onAsk={askProjectAi}
         />
       ) : null}
     </main>
