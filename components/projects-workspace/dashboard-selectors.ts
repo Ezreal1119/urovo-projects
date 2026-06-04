@@ -67,7 +67,6 @@ export function filterDashboardTickets(
         item.ticket.status,
         item.ticket.priority,
       ].join(" "),
-      item.ticket.title,
     );
   });
 }
@@ -113,7 +112,6 @@ export function filterDashboardRequirements(
           (entry) => `${entry.time} ${entry.remark}`,
         ),
       ].join(" "),
-      item.requirement.title,
     );
   });
 }

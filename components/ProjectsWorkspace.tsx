@@ -252,7 +252,6 @@ export default function ProjectsWorkspace() {
           ticket.status,
           ticket.priority,
         ].join(" "),
-        ticket.title,
       );
     });
   }, [tickets, globalQuery, ticketFilter]);
@@ -274,7 +273,6 @@ export default function ProjectsWorkspace() {
           ...requirement.related_tickets,
           ...requirement.timeline.map((item) => `${item.time} ${item.remark}`),
         ].join(" "),
-        requirement.title,
       ),
     );
   }, [requirements, globalQuery]);
@@ -297,7 +295,6 @@ export default function ProjectsWorkspace() {
           ...requirement.linked_requirements,
           requirement.remark,
         ].join(" "),
-        requirement.simple_requirements.join(" "),
       ),
     );
   }, [overview, globalQuery]);

@@ -1,39 +1,34 @@
 export type ParsedSearchQuery = {
   include: string;
-  titleExclusions: string[];
+  exclusions: string[];
 };
 
 export function parseSearchQuery(query: string): ParsedSearchQuery {
-  const titleExclusions: string[] = [];
+  const exclusions: string[] = [];
   const include = query.replace(/\[([^\]]*)\]/g, (_match, term: string) => {
     const normalizedTerm = normalizeSearchText(term);
     if (normalizedTerm) {
-      titleExclusions.push(normalizedTerm);
+      exclusions.push(normalizedTerm);
     }
     return " ";
   });
 
   return {
     include: normalizeSearchText(include),
-    titleExclusions: Array.from(new Set(titleExclusions)),
+    exclusions: Array.from(new Set(exclusions)),
   };
 }
 
 export function hasSearchQuery(query: ParsedSearchQuery) {
-  return query.include.length > 0 || query.titleExclusions.length > 0;
+  return query.include.length > 0 || query.exclusions.length > 0;
 }
 
 export function matchesSearchQuery(
   query: ParsedSearchQuery,
   content: string,
-  title: string,
 ) {
-  const normalizedTitle = normalizeSearchText(title);
-  if (
-    query.titleExclusions.some((exclusion) =>
-      normalizedTitle.includes(exclusion),
-    )
-  ) {
+  const normalizedContent = normalizeSearchText(content);
+  if (query.exclusions.some((exclusion) => normalizedContent.includes(exclusion))) {
     return false;
   }
 
@@ -41,7 +36,7 @@ export function matchesSearchQuery(
     return true;
   }
 
-  return normalizeSearchText(content).includes(query.include);
+  return normalizedContent.includes(query.include);
 }
 
 function normalizeSearchText(value: string) {
