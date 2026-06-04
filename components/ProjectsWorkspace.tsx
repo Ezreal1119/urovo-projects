@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type ReleaseRecord, type ReleaseRecordInput, type Requirement, type Ticket, type TicketEventSummariesFile } from "@/lib/types";
-import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
+import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectAskAiMessage, ProjectAskAiResponse, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
@@ -22,7 +22,7 @@ import { TicketEventSummaryCard, ticketEventSummaryForTicket } from "./projects-
 import { TicketGanttDialog } from "./projects-workspace/tickets/TicketGanttDialog";
 import { ProjectTreeGroup } from "./projects-workspace/sidebar/ProjectTreeGroup";
 import { Metric, Toast, Pagination } from "./projects-workspace/ui";
-import { AiAnalysisDialog, GenerateReportDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
+import { AiAnalysisDialog, GenerateReportDialog, ProjectAskAiDialog, ProjectJsonGeneratorDialog, ProjectJsonResultDialog, ProjectSummaryDialog, RequirementDeleteBlockedDialog, TicketDeleteBlockedDialog } from "./projects-workspace/dialogs/Dialogs";
 
 type AiAnalysisTarget = {
   entityType: "ticket" | "requirement";
@@ -147,6 +147,12 @@ export default function ProjectsWorkspace() {
   const [showProjectJsonGenerator, setShowProjectJsonGenerator] =
     useState(false);
   const [showGenerateReport, setShowGenerateReport] = useState(false);
+  const [showProjectAskAi, setShowProjectAskAi] = useState(false);
+  const [projectAskAiMessages, setProjectAskAiMessages] = useState<
+    ProjectAskAiMessage[]
+  >([]);
+  const [projectAskAiLoading, setProjectAskAiLoading] = useState(false);
+  const [projectAskAiError, setProjectAskAiError] = useState("");
   const [generatedProjectJson, setGeneratedProjectJson] = useState("");
   const [generatedProjectSummary, setGeneratedProjectSummary] = useState("");
   const [aiAnalysisTarget, setAiAnalysisTarget] =
@@ -467,6 +473,9 @@ export default function ProjectsWorkspace() {
     setSelectedOverviewRequirementId("");
     setOverviewDirty(false);
     setSelectedOverviewRequirementDirty(false);
+    setShowProjectAskAi(false);
+    setProjectAskAiMessages([]);
+    setProjectAskAiError("");
   }
 
   function selectTicket(ticketId: string) {
@@ -525,6 +534,9 @@ export default function ProjectsWorkspace() {
     setReleaseModel("");
     setReleaseRecords([]);
     setReleaseRecordsError("");
+    setShowProjectAskAi(false);
+    setProjectAskAiMessages([]);
+    setProjectAskAiError("");
     setSelectedTicketDirty(false);
     setSelectedRequirementDirty(false);
     setOverviewDirty(false);
@@ -610,6 +622,9 @@ export default function ProjectsWorkspace() {
       setReleaseModel("");
       setReleaseRecords([]);
       setReleaseRecordsError("");
+      setShowProjectAskAi(false);
+      setProjectAskAiMessages([]);
+      setProjectAskAiError("");
     }
   }
 
@@ -690,6 +705,52 @@ export default function ProjectsWorkspace() {
       method: "POST",
       body: JSON.stringify(draft),
     });
+  }
+
+  function openProjectAskAi() {
+    setShowProjectAskAi(true);
+    setProjectAskAiError("");
+  }
+
+  function closeProjectAskAiDialog() {
+    if (projectAskAiLoading) {
+      return;
+    }
+    setShowProjectAskAi(false);
+    setProjectAskAiMessages([]);
+    setProjectAskAiError("");
+  }
+
+  async function askProjectAi(prompt: string) {
+    if (!selectedFolder) {
+      return;
+    }
+
+    const userMessage: ProjectAskAiMessage = {
+      role: "user",
+      content: prompt.trim(),
+    };
+    const nextMessages = [...projectAskAiMessages, userMessage];
+    setProjectAskAiMessages(nextMessages);
+    setProjectAskAiError("");
+    setProjectAskAiLoading(true);
+    try {
+      const data = await api<ProjectAskAiResponse>(
+        `${projectApiPath(selectedFolder)}/ask-ai`,
+        {
+          method: "POST",
+          body: JSON.stringify({ messages: nextMessages }),
+        },
+      );
+      setProjectAskAiMessages([
+        ...nextMessages,
+        { role: "assistant", content: data.answer },
+      ]);
+    } catch (requestError) {
+      setProjectAskAiError((requestError as Error).message);
+    } finally {
+      setProjectAskAiLoading(false);
+    }
   }
 
   async function analyzeTicket(ticket: Ticket) {
@@ -1572,25 +1633,25 @@ export default function ProjectsWorkspace() {
               : projectModeLabel(projectMode)}
           </div>
 
-          <label className="relative ml-auto hidden w-full max-w-lg md:block">
-            <span className="sr-only">
-              {viewMode === "dashboard"
-                ? dashboardMode === "requirements"
-                  ? "Search all requirements"
-                  : "Search all tickets"
-                : projectMode === "overview"
-                  ? "Search demand"
-                  : projectMode === "requirements"
-                    ? "Search requirements"
-                    : "Search tickets"}
-            </span>
-            <span className="pointer-events-none absolute left-3 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan-400 to-emerald-400" />
-            <input
-              value={globalQuery}
-              onChange={(event) => updateGlobalQuery(event.target.value)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-7 pr-10 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
-              placeholder={
-                viewMode === "dashboard"
+          <div className="ml-auto hidden w-full max-w-2xl items-center justify-end gap-2 md:flex">
+            {viewMode === "project" && selectedFolder ? (
+              <button
+                type="button"
+                onClick={openProjectAskAi}
+                disabled={projectAskAiLoading}
+                className="group h-10 shrink-0 rounded-xl bg-gradient-to-r from-cyan-400 via-sky-500 to-emerald-400 p-px shadow-sm shadow-cyan-200/70 ring-1 ring-cyan-100 transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span className="flex h-full items-center gap-2 rounded-[0.7rem] bg-slate-950 px-3 text-sm font-semibold text-white transition group-hover:bg-slate-900">
+                  <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-100">
+                    AI
+                  </span>
+                  Ask AI
+                </span>
+              </button>
+            ) : null}
+            <label className="relative w-full max-w-lg">
+              <span className="sr-only">
+                {viewMode === "dashboard"
                   ? dashboardMode === "requirements"
                     ? "Search all requirements"
                     : "Search all tickets"
@@ -1598,20 +1659,37 @@ export default function ProjectsWorkspace() {
                     ? "Search demand"
                     : projectMode === "requirements"
                       ? "Search requirements"
-                      : "Search tickets"
-              }
-            />
-            {globalQuery ? (
-              <button
-                type="button"
-                onClick={() => updateGlobalQuery("")}
-                className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
-                aria-label="Clear search"
-              >
-                x
-              </button>
-            ) : null}
-          </label>
+                      : "Search tickets"}
+              </span>
+              <span className="pointer-events-none absolute left-3 top-1/2 h-4 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b from-cyan-400 to-emerald-400" />
+              <input
+                value={globalQuery}
+                onChange={(event) => updateGlobalQuery(event.target.value)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-7 pr-10 text-sm shadow-inner shadow-slate-200/50 outline-none transition placeholder:text-slate-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-100"
+                placeholder={
+                  viewMode === "dashboard"
+                    ? dashboardMode === "requirements"
+                      ? "Search all requirements"
+                      : "Search all tickets"
+                    : projectMode === "overview"
+                      ? "Search demand"
+                      : projectMode === "requirements"
+                        ? "Search requirements"
+                        : "Search tickets"
+                }
+              />
+              {globalQuery ? (
+                <button
+                  type="button"
+                  onClick={() => updateGlobalQuery("")}
+                  className="absolute right-2 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-sm font-semibold text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                  aria-label="Clear search"
+                >
+                  x
+                </button>
+              ) : null}
+            </label>
+          </div>
           {viewMode === "project" && selectedFolder ? (
             <div className="grid shrink-0 grid-cols-1 gap-2 sm:flex sm:items-center">
               <button
@@ -2156,6 +2234,17 @@ export default function ProjectsWorkspace() {
           projectName={selectedProject?.project_name ?? "Project"}
           summary={generatedProjectSummary}
           onClose={() => setGeneratedProjectSummary("")}
+        />
+      ) : null}
+
+      {showProjectAskAi ? (
+        <ProjectAskAiDialog
+          projectName={selectedProject?.project_name ?? "Project workspace"}
+          messages={projectAskAiMessages}
+          loading={projectAskAiLoading}
+          error={projectAskAiError}
+          onClose={closeProjectAskAiDialog}
+          onAsk={askProjectAi}
         />
       ) : null}
 

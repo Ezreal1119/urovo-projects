@@ -171,6 +171,15 @@ export type ReportGenerateResponse =
       requirementCount: number;
     };
 
+export type ProjectAskAiMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ProjectAskAiResponse = {
+  answer: string;
+};
+
 export type AiAnalysisEvent = {
   time: string;
   summary: string;
