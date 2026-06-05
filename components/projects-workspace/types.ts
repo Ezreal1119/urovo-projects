@@ -184,6 +184,15 @@ export type ProjectAskAiOptions = {
   deepThinking: boolean;
 };
 
+export type ProjectAskAiSuggestion = {
+  id: string;
+  label: string;
+  prompt: string;
+  kind: "general" | "ticket";
+  meta?: string;
+  tone?: "default" | "urgent";
+};
+
 export type AiAnalysisEvent = {
   time: string;
   summary: string;

@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
-import type { AiAnalysisResult, ProjectAskAiMessage, ProjectAskAiOptions, ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
+import type { Ticket } from "@/lib/types";
+import type { AiAnalysisResult, ProjectAskAiMessage, ProjectAskAiOptions, ProjectAskAiSuggestion, ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
 import { emptyProjectJsonDraft, projectJsonDraftsEqual } from "../drafts";
 import { copyTextToClipboard, downloadSummaryMarkdownAsPng, projectSummaryPngFilename } from "../summary";
 import { todayDate } from "../formatters";
+import { priorityLabels, statusLabels } from "../labels";
 import { Field, Overlay } from "../ui";
 
 export function AiAnalysisDialog({
@@ -208,6 +210,10 @@ export function ProjectAskAiDialog({
   messages,
   loading,
   error,
+  suggestions = [],
+  tickets = [],
+  ticketAnalysisLoading = false,
+  onAnalyzeTicket,
   onClose,
   onAsk,
 }: {
@@ -215,6 +221,10 @@ export function ProjectAskAiDialog({
   messages: ProjectAskAiMessage[];
   loading: boolean;
   error: string;
+  suggestions?: ProjectAskAiSuggestion[];
+  tickets?: Ticket[];
+  ticketAnalysisLoading?: boolean;
+  onAnalyzeTicket?: (ticket: Ticket) => Promise<void>;
   onClose: () => void;
   onAsk: (prompt: string, options: ProjectAskAiOptions) => Promise<void>;
 }) {
@@ -222,6 +232,7 @@ export function ProjectAskAiDialog({
   const [deepThinking, setDeepThinking] = useState(false);
   const [composing, setComposing] = useState(false);
   const [emptyError, setEmptyError] = useState("");
+  const [showTicketAnalyzer, setShowTicketAnalyzer] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [copyBlockedIndex, setCopyBlockedIndex] = useState<number | null>(null);
 
@@ -237,6 +248,18 @@ export function ProjectAskAiDialog({
     setCopyBlockedIndex(null);
     await onAsk(prompt, { deepThinking });
     setDraft("");
+  }
+
+  async function handleSuggestionClick(suggestion: ProjectAskAiSuggestion) {
+    const prompt = suggestion.prompt.trim();
+    if (!prompt || loading) {
+      return;
+    }
+    setDraft("");
+    setEmptyError("");
+    setCopiedIndex(null);
+    setCopyBlockedIndex(null);
+    await onAsk(prompt, { deepThinking });
   }
 
   async function copyAnswer(message: ProjectAskAiMessage, index: number) {
@@ -271,13 +294,18 @@ export function ProjectAskAiDialog({
       <div className="flex h-[min(92vh,54rem)] w-[min(96vw,72rem)] flex-col overflow-hidden rounded-2xl border border-white/80 bg-white shadow-2xl shadow-slate-950/20 ring-1 ring-cyan-100">
         <div className="border-b border-cyan-100 bg-[linear-gradient(135deg,#ecfeff_0%,#f8fafc_48%,#ecfdf5_100%)] px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
-                Ask AI
-              </h2>
-              <p className="mt-1 max-w-3xl truncate text-sm font-medium text-slate-500">
-                {projectName || "Project workspace"}
-              </p>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-slate-950 text-sm font-bold text-cyan-100 shadow-lg shadow-cyan-200">
+                AI
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-700">
+                  Ask AI
+                </div>
+                <h2 className="mt-1 truncate text-2xl font-semibold tracking-tight text-slate-950">
+                  {projectName || "Project workspace"}
+                </h2>
+              </div>
             </div>
             <button
               type="button"
@@ -292,20 +320,19 @@ export function ProjectAskAiDialog({
 
         <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef8f6_100%)] px-4 py-5 sm:px-6">
           {messages.length === 0 ? (
-            <div className="grid min-h-full place-items-center">
-              <div className="w-full max-w-xl rounded-2xl border border-dashed border-cyan-200 bg-white/80 p-8 text-center shadow-lg shadow-slate-200/50 ring-1 ring-white">
-                <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-slate-950 text-sm font-bold text-cyan-100 shadow-md shadow-cyan-200">
-                  AI
-                </div>
-                <h3 className="text-base font-semibold text-slate-950">
-                  Start a project conversation
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Ask about demands, requirements, tickets, release records, or
-                  current project progress.
-                </p>
-              </div>
-            </div>
+            <ProjectAskAiSuggestedPrompts
+              suggestions={suggestions}
+              tickets={tickets}
+              loading={loading}
+              ticketAnalysisLoading={ticketAnalysisLoading}
+              onSelect={(suggestion) => void handleSuggestionClick(suggestion)}
+              onAnalyzeTicket={onAnalyzeTicket}
+              showTicketAnalyzer={showTicketAnalyzer}
+              onToggleTicketAnalyzer={() =>
+                setShowTicketAnalyzer((current) => !current)
+              }
+              onCloseTicketAnalyzer={() => setShowTicketAnalyzer(false)}
+            />
           ) : (
             <div className="space-y-5">
               {messages.map((message, index) => {
@@ -430,6 +457,278 @@ export function ProjectAskAiDialog({
         </form>
       </div>
     </Overlay>
+  );
+}
+
+function ProjectAskAiSuggestedPrompts({
+  suggestions,
+  tickets,
+  loading,
+  ticketAnalysisLoading,
+  onSelect,
+  onAnalyzeTicket,
+  showTicketAnalyzer,
+  onToggleTicketAnalyzer,
+  onCloseTicketAnalyzer,
+}: {
+  suggestions: ProjectAskAiSuggestion[];
+  tickets: Ticket[];
+  loading: boolean;
+  ticketAnalysisLoading: boolean;
+  onSelect: (suggestion: ProjectAskAiSuggestion) => void;
+  onAnalyzeTicket?: (ticket: Ticket) => Promise<void>;
+  showTicketAnalyzer: boolean;
+  onToggleTicketAnalyzer: () => void;
+  onCloseTicketAnalyzer: () => void;
+}) {
+  const generalSuggestions = suggestions.filter(
+    (suggestion) => suggestion.kind === "general",
+  );
+  const ticketSuggestions = suggestions.filter(
+    (suggestion) => suggestion.kind === "ticket",
+  );
+
+  return (
+    <div className="flex min-h-full items-center justify-center py-6">
+      <div className="w-full max-w-5xl">
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold tracking-tight text-slate-950">
+              Suggested questions
+            </h3>
+          </div>
+          <div className="w-fit rounded-full border border-cyan-100 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-700 shadow-sm">
+            Recommended
+          </div>
+        </div>
+
+        {generalSuggestions.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {generalSuggestions.map((suggestion) => (
+              <ProjectAskAiSuggestionButton
+                key={suggestion.id}
+                suggestion={suggestion}
+                loading={loading}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {ticketSuggestions.length > 0 || onAnalyzeTicket ? (
+          <div className="mt-5 rounded-2xl border border-red-100 bg-white/75 p-4 shadow-lg shadow-slate-200/50 ring-1 ring-white">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-950">
+                  Urgent ticket prompts
+                </h4>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {onAnalyzeTicket ? (
+                  <button
+                    type="button"
+                    onClick={onToggleTicketAnalyzer}
+                    disabled={ticketAnalysisLoading}
+                    className={`group rounded-full p-px shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-55 ${
+                      showTicketAnalyzer
+                        ? "bg-gradient-to-r from-cyan-400 via-sky-500 to-emerald-400"
+                        : "bg-gradient-to-r from-cyan-300 via-sky-400 to-emerald-300"
+                    }`}
+                  >
+                    <span
+                      className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-bold uppercase tracking-[0.12em] transition ${
+                        showTicketAnalyzer
+                          ? "bg-slate-950 text-white"
+                          : "bg-white text-cyan-800 group-hover:bg-cyan-50"
+                      }`}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-300" />
+                      Select Ticket
+                    </span>
+                  </button>
+                ) : null}
+                <span className="rounded-full border border-red-100 bg-red-50 px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em] text-red-700">
+                  Urgent
+                </span>
+              </div>
+            </div>
+            {showTicketAnalyzer && onAnalyzeTicket ? (
+              <ProjectAskAiTicketAnalyzerPicker
+                tickets={tickets}
+                loading={ticketAnalysisLoading}
+                onAnalyzeTicket={onAnalyzeTicket}
+                onClose={onCloseTicketAnalyzer}
+              />
+            ) : null}
+            {ticketSuggestions.length > 0 ? (
+              <div className="grid gap-3 lg:grid-cols-3">
+                {ticketSuggestions.map((suggestion) => (
+                  <ProjectAskAiSuggestionButton
+                    key={suggestion.id}
+                    suggestion={suggestion}
+                    loading={loading}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-red-100 bg-white/60 px-4 py-5 text-sm font-medium text-slate-500">
+                No urgent unresolved ticket prompts.
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ProjectAskAiTicketAnalyzerPicker({
+  tickets,
+  loading,
+  onAnalyzeTicket,
+  onClose,
+}: {
+  tickets: Ticket[];
+  loading: boolean;
+  onAnalyzeTicket: (ticket: Ticket) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredTickets = useMemo(() => {
+    if (!normalizedQuery) {
+      return tickets;
+    }
+    return tickets.filter((ticket) =>
+      [
+        ticket.id,
+        ticket.title,
+        statusLabels[ticket.status],
+        ticket.status,
+        priorityLabels[ticket.priority],
+        ticket.priority,
+        ticket.summary,
+        ticket.next_action,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+  }, [normalizedQuery, tickets]);
+
+  async function handleAnalyze(ticket: Ticket) {
+    if (loading) {
+      return;
+    }
+    onClose();
+    await onAnalyzeTicket(ticket);
+  }
+
+  return (
+    <div className="mb-4 rounded-2xl border border-cyan-100 bg-[linear-gradient(135deg,#f8fafc,#ecfeff)] p-3 shadow-inner shadow-cyan-100/50">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h5 className="text-sm font-semibold text-slate-950">
+            Choose a ticket to analyze
+          </h5>
+          <p className="mt-1 text-xs font-medium text-slate-500">
+            Uses the existing ticket AI Analysis prompt.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading}
+          className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-55"
+        >
+          Hide
+        </button>
+      </div>
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        disabled={loading}
+        className="mb-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+        placeholder="Search ticket ID, title, status, priority, summary, or next action"
+      />
+      <div className="max-h-72 space-y-2 overflow-auto pr-1">
+        {tickets.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-white/80 px-4 py-5 text-sm font-medium text-slate-500">
+            No tickets are available for analysis.
+          </div>
+        ) : filteredTickets.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-white/80 px-4 py-5 text-sm font-medium text-slate-500">
+            No tickets match this search.
+          </div>
+        ) : (
+          filteredTickets.map((ticket) => (
+            <button
+              key={ticket.id}
+              type="button"
+              onClick={() => void handleAnalyze(ticket)}
+              disabled={loading}
+              className="group w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:bg-cyan-50/50 hover:shadow-md disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-55"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-600">
+                  {ticket.id}
+                </span>
+                <span className="rounded-md border border-orange-100 bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-800">
+                  {statusLabels[ticket.status]}
+                </span>
+                <span
+                  className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                    ticket.priority === "urgent"
+                      ? "border-red-600 bg-red-600 text-white"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {priorityLabels[ticket.priority]}
+                </span>
+              </div>
+              <div className="mt-2 text-sm font-semibold leading-5 text-slate-950 [overflow-wrap:anywhere] group-hover:text-cyan-950">
+                {ticket.title || "Untitled ticket"}
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProjectAskAiSuggestionButton({
+  suggestion,
+  loading,
+  onSelect,
+}: {
+  suggestion: ProjectAskAiSuggestion;
+  loading: boolean;
+  onSelect: (suggestion: ProjectAskAiSuggestion) => void;
+}) {
+  const urgent = suggestion.tone === "urgent";
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(suggestion)}
+      disabled={loading}
+      className={`group min-h-24 rounded-2xl border p-4 text-left shadow-sm transition [overflow-wrap:anywhere] ${
+        urgent
+          ? "border-red-100 bg-[linear-gradient(135deg,#fff7ed,#fff1f2)] shadow-red-100/70 hover:border-red-200"
+          : "border-cyan-100 bg-white/85 shadow-slate-200/70 hover:border-cyan-200"
+      } hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-55`}
+    >
+      {!urgent ? (
+        <span className="mb-3 inline-flex rounded-full border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-700">
+          {suggestion.meta ?? "Suggested"}
+        </span>
+      ) : null}
+      <span className="block text-sm font-semibold leading-6 text-slate-950 transition group-hover:text-cyan-950">
+        {suggestion.label}
+      </span>
+    </button>
   );
 }
 

@@ -6,6 +6,7 @@ import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type Overv
 import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectAskAiMessage, ProjectAskAiOptions, ProjectAskAiResponse, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
+import { buildProjectAskAiSuggestions } from "./projects-workspace/ask-ai-suggestions";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
 import { emptyOverview, eventDraftForApi, overviewRequirementDraftForApi, requirementDraftForApi, requirementTimelineDraftForApi, ticketToDraft } from "./projects-workspace/drafts";
 import { createUuid, formatDateTimeFull } from "./projects-workspace/formatters";
@@ -198,6 +199,10 @@ export default function ProjectsWorkspace() {
   const autoNextActionJobByTicketId = useMemo(
     () => new Map(autoNextActionJobs.map((job) => [job.ticketId, job])),
     [autoNextActionJobs],
+  );
+  const projectAskAiSuggestions = useMemo(
+    () => buildProjectAskAiSuggestions(tickets),
+    [tickets],
   );
 
   const selectedTicket =
@@ -797,7 +802,7 @@ export default function ProjectsWorkspace() {
       entityType: "ticket",
       entityId: ticket.id,
       title: ticket.title,
-      hasUnsavedChanges: selectedTicketDirty,
+      hasUnsavedChanges: selectedTicket?.id === ticket.id && selectedTicketDirty,
     });
     setAiAnalysisResult(null);
     setAiAnalysisError("");
@@ -2418,6 +2423,10 @@ export default function ProjectsWorkspace() {
           messages={projectAskAiMessages}
           loading={projectAskAiLoading}
           error={projectAskAiError}
+          suggestions={projectAskAiSuggestions}
+          tickets={tickets}
+          ticketAnalysisLoading={aiAnalysisLoading}
+          onAnalyzeTicket={analyzeTicket}
           onClose={closeProjectAskAiDialog}
           onAsk={askProjectAi}
         />

@@ -37,9 +37,11 @@ import {
   ticketEventSummaryForTicket,
 } from "@/components/projects-workspace/tickets/TicketEventSummaries";
 import { TicketGanttDialog } from "@/components/projects-workspace/tickets/TicketGanttDialog";
-import { ProjectAskAiDialog } from "@/components/projects-workspace/dialogs/Dialogs";
+import { AiAnalysisDialog, ProjectAskAiDialog } from "@/components/projects-workspace/dialogs/Dialogs";
 import { api } from "@/components/projects-workspace/api-client";
+import { buildProjectAskAiSuggestions } from "@/components/projects-workspace/ask-ai-suggestions";
 import type {
+  AiAnalysisResult,
   ProjectAskAiMessage,
   ProjectAskAiOptions,
   ProjectAskAiResponse,
@@ -135,6 +137,15 @@ export default function ProjectPublicPreview({
   >([]);
   const [projectAskAiLoading, setProjectAskAiLoading] = useState(false);
   const [projectAskAiError, setProjectAskAiError] = useState("");
+  const [aiAnalysisTarget, setAiAnalysisTarget] = useState<Ticket | null>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] =
+    useState<AiAnalysisResult | null>(null);
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const [aiAnalysisError, setAiAnalysisError] = useState("");
+  const projectAskAiSuggestions = useMemo(
+    () => buildProjectAskAiSuggestions(liveTickets),
+    [liveTickets],
+  );
   const overviewModelOptions = useMemo(
     () => exactModelOptions(overview.requirements.map((demand) => demand.product)),
     [overview.requirements],
@@ -266,6 +277,31 @@ export default function ProjectPublicPreview({
     } finally {
       setProjectAskAiLoading(false);
     }
+  };
+  const analyzeTicketFromAskAi = async (ticket: Ticket) => {
+    setAiAnalysisTarget(ticket);
+    setAiAnalysisResult(null);
+    setAiAnalysisError("");
+    setAiAnalysisLoading(true);
+    try {
+      const data = await api<{ analysis: AiAnalysisResult }>(
+        `/api/urovo-projects/${encodeURIComponent(project.project_id)}/tickets/${encodeURIComponent(ticket.id)}/analyze`,
+        { method: "POST" },
+      );
+      setAiAnalysisResult(data.analysis);
+    } catch (requestError) {
+      setAiAnalysisError((requestError as Error).message);
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  };
+  const closeAiAnalysis = () => {
+    if (aiAnalysisLoading) {
+      return;
+    }
+    setAiAnalysisTarget(null);
+    setAiAnalysisResult(null);
+    setAiAnalysisError("");
   };
 
   return (
@@ -403,8 +439,21 @@ export default function ProjectPublicPreview({
           messages={projectAskAiMessages}
           loading={projectAskAiLoading}
           error={projectAskAiError}
+          suggestions={projectAskAiSuggestions}
+          tickets={liveTickets}
+          ticketAnalysisLoading={aiAnalysisLoading}
+          onAnalyzeTicket={analyzeTicketFromAskAi}
           onClose={closeProjectAskAi}
           onAsk={askProjectAi}
+        />
+      ) : null}
+      {aiAnalysisTarget ? (
+        <AiAnalysisDialog
+          analysis={aiAnalysisResult}
+          loading={aiAnalysisLoading}
+          error={aiAnalysisError}
+          hasUnsavedChanges={false}
+          onClose={closeAiAnalysis}
         />
       ) : null}
     </main>
