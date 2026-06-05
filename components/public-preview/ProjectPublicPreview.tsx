@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Image from "next/image";
 import type {
@@ -38,9 +38,10 @@ import {
 } from "@/components/projects-workspace/tickets/TicketEventSummaries";
 import { TicketGanttDialog } from "@/components/projects-workspace/tickets/TicketGanttDialog";
 import { ProjectAskAiDialog } from "@/components/projects-workspace/dialogs/Dialogs";
-import { api, projectApiPath } from "@/components/projects-workspace/api-client";
+import { api } from "@/components/projects-workspace/api-client";
 import type {
   ProjectAskAiMessage,
+  ProjectAskAiOptions,
   ProjectAskAiResponse,
 } from "@/components/projects-workspace/types";
 
@@ -63,6 +64,11 @@ type RequirementPreviewFilter =
 type DisplaySummary = {
   summary: TicketEventSummary;
   events: TimelineEvent[];
+};
+
+type PublicPreviewLiveData = {
+  tickets: Ticket[];
+  ticketEventSummaries: TicketEventSummariesFile;
 };
 
 const ticketPreviewFilters: { value: TicketPreviewFilter; label: string }[] = [
@@ -95,7 +101,6 @@ const previewTabs: { value: PreviewTab; label: string }[] = [
 const MODEL_FILTER_ALL = "__all_models__";
 
 export default function ProjectPublicPreview({
-  folder,
   project,
   overview,
   requirements,
@@ -103,7 +108,6 @@ export default function ProjectPublicPreview({
   releaseRecords,
   ticketEventSummaries,
 }: {
-  folder: string;
   project: ProjectInfo;
   overview: Overview;
   requirements: Requirement[];
@@ -121,6 +125,10 @@ export default function ProjectPublicPreview({
     useState(MODEL_FILTER_ALL);
   const [releaseModelFilter, setReleaseModelFilter] =
     useState(MODEL_FILTER_ALL);
+  const [liveTickets, setLiveTickets] = useState(tickets);
+  const [liveTicketEventSummaries, setLiveTicketEventSummaries] =
+    useState(ticketEventSummaries);
+  const [liveRefreshError, setLiveRefreshError] = useState("");
   const [showProjectAskAi, setShowProjectAskAi] = useState(false);
   const [projectAskAiMessages, setProjectAskAiMessages] = useState<
     ProjectAskAiMessage[]
@@ -144,14 +152,50 @@ export default function ProjectPublicPreview({
     [releaseRecords, releaseModelFilter],
   );
   const filteredTickets = useMemo(
-    () => filterPreviewTickets(tickets, ticketFilter, query),
-    [tickets, ticketFilter, query],
+    () => filterPreviewTickets(liveTickets, ticketFilter, query),
+    [liveTickets, ticketFilter, query],
   );
   const filteredRequirements = useMemo(
     () =>
-      filterPreviewRequirements(requirements, tickets, requirementFilter, query),
-    [requirements, tickets, requirementFilter, query],
+      filterPreviewRequirements(
+        requirements,
+        liveTickets,
+        requirementFilter,
+        query,
+      ),
+    [requirements, liveTickets, requirementFilter, query],
   );
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshLivePreviewData() {
+      try {
+        const data = await api<PublicPreviewLiveData>(
+          `/api/urovo-projects/${encodeURIComponent(project.project_id)}`,
+        );
+        if (cancelled) {
+          return;
+        }
+        setLiveTickets(data.tickets);
+        setLiveTicketEventSummaries(data.ticketEventSummaries);
+        setLiveRefreshError("");
+      } catch (error) {
+        if (!cancelled) {
+          setLiveRefreshError((error as Error).message);
+        }
+      }
+    }
+
+    void refreshLivePreviewData();
+    const interval = window.setInterval(() => {
+      void refreshLivePreviewData();
+    }, 5_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [project.project_id]);
   const openRequirement = (requirement: Requirement) => {
     setTab("requirements");
     setRequirementFilter("all");
@@ -186,7 +230,10 @@ export default function ProjectPublicPreview({
     setProjectAskAiMessages([]);
     setProjectAskAiError("");
   };
-  const askProjectAi = async (prompt: string) => {
+  const askProjectAi = async (
+    prompt: string,
+    options: ProjectAskAiOptions,
+  ) => {
     const userMessage: ProjectAskAiMessage = {
       role: "user",
       content: prompt.trim(),
@@ -197,15 +244,22 @@ export default function ProjectPublicPreview({
     setProjectAskAiLoading(true);
     try {
       const data = await api<ProjectAskAiResponse>(
-        `${projectApiPath(folder)}/ask-ai`,
+        `/api/urovo-projects/${encodeURIComponent(project.project_id)}/ask-ai`,
         {
           method: "POST",
-          body: JSON.stringify({ messages: nextMessages }),
+          body: JSON.stringify({
+            messages: nextMessages,
+            deepThinking: options.deepThinking,
+          }),
         },
       );
+      const answer = typeof data?.answer === "string" ? data.answer.trim() : "";
+      if (!answer) {
+        throw new Error("Ask AI returned an empty answer.");
+      }
       setProjectAskAiMessages([
         ...nextMessages,
-        { role: "assistant", content: data.answer },
+        { role: "assistant", content: answer },
       ]);
     } catch (requestError) {
       setProjectAskAiError((requestError as Error).message);
@@ -296,6 +350,11 @@ export default function ProjectPublicPreview({
             onOverviewModelFilterChange={setOverviewModelFilter}
             onReleaseModelFilterChange={setReleaseModelFilter}
           />
+          {liveRefreshError ? (
+            <div className="border-t border-amber-200 bg-amber-50 px-5 py-2 text-sm font-medium text-amber-700">
+              Live refresh paused: {liveRefreshError}
+            </div>
+          ) : null}
         </section>
 
         {tab === "overview" ? (
@@ -316,16 +375,16 @@ export default function ProjectPublicPreview({
         ) : tab === "tickets" ? (
           <TicketsPreview
             tickets={filteredTickets}
-            totalTickets={tickets.length}
+            totalTickets={liveTickets.length}
             filtering={query.trim().length > 0 || ticketFilter !== "all"}
-            ticketEventSummaries={ticketEventSummaries}
+            ticketEventSummaries={liveTicketEventSummaries}
             onOpenGantt={() => setShowTicketGantt(true)}
           />
         ) : (
           <RequirementsPreview
             requirements={filteredRequirements}
             totalRequirements={requirements.length}
-            tickets={tickets}
+            tickets={liveTickets}
             filtering={query.trim().length > 0 || requirementFilter !== "all"}
             onOpenTicket={openTicket}
           />
@@ -333,7 +392,7 @@ export default function ProjectPublicPreview({
       </div>
       {showTicketGantt ? (
         <TicketGanttDialog
-          tickets={tickets}
+          tickets={liveTickets}
           onClose={() => setShowTicketGantt(false)}
           onFocusTicket={focusTicketFromGantt}
         />

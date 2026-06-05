@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { GENERAL_OVERVIEW_PRODUCT, type DashboardData, type Overview, type OverviewRequirement, type ProjectInfo, type ProjectListItem, type ReleaseRecord, type ReleaseRecordInput, type Requirement, type Ticket, type TicketEventSummariesFile } from "@/lib/types";
-import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectAskAiMessage, ProjectAskAiResponse, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
+import type { AiAnalysisResult, DashboardFilter, DashboardReleaseNoteRow, DashboardRequirement, DashboardTicket, DashboardMode, EventDraft, OverviewRequirementDraft, OverviewSettingsDraft, ProjectAskAiMessage, ProjectAskAiOptions, ProjectAskAiResponse, ProjectJsonDraft, ProjectMode, RecentProject, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, RequirementDraft, RequirementTimelineDraft, TicketDeleteBlocker, TicketDraft, TicketFilter, ViewMode } from "./projects-workspace/types";
 import { RECENT_PROJECTS_KEY, TICKETS_PER_PAGE } from "./projects-workspace/constants";
 import { api, ApiError, projectApiPath } from "./projects-workspace/api-client";
 import { flattenDashboardRequirements, flattenDashboardTickets, filterDashboardRequirements, filterDashboardTickets } from "./projects-workspace/dashboard-selectors";
@@ -39,6 +39,10 @@ type AutoAiPolishJob = {
   startedAt?: string;
   finishedAt?: string;
   error?: string;
+};
+
+type AutoTicketNextActionJob = AutoAiPolishJob & {
+  ticket?: Ticket;
 };
 
 const emptyTicketEventSummaries: TicketEventSummariesFile = {
@@ -88,6 +92,12 @@ function autoPolishStatusText(jobs: AutoAiPolishJob[]) {
   return [...running, ...pending].join(" | ");
 }
 
+function ticketsFromNextActionJobs(jobs: AutoTicketNextActionJob[]) {
+  return jobs
+    .map((job) => job.ticket)
+    .filter((ticket): ticket is Ticket => Boolean(ticket));
+}
+
 export default function ProjectsWorkspace() {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [projectMode, setProjectMode] = useState<ProjectMode>("tickets");
@@ -129,6 +139,9 @@ export default function ProjectsWorkspace() {
   const [ticketPolishing, setTicketPolishing] = useState(false);
   const [polishingTicketId, setPolishingTicketId] = useState("");
   const [autoPolishJobs, setAutoPolishJobs] = useState<AutoAiPolishJob[]>([]);
+  const [autoNextActionJobs, setAutoNextActionJobs] = useState<
+    AutoTicketNextActionJob[]
+  >([]);
   const [error, setError] = useState("");
   const [ticketEventSummariesError, setTicketEventSummariesError] =
     useState("");
@@ -179,6 +192,13 @@ export default function ProjectsWorkspace() {
     useState<RequirementDeleteBlocker | null>(null);
   const loadProjectRequestId = useRef(0);
   const hasActiveAutoPolishJobs = autoPolishJobs.some(isActiveAutoPolishJob);
+  const hasActiveAutoNextActionJobs = autoNextActionJobs.some(
+    isActiveAutoPolishJob,
+  );
+  const autoNextActionJobByTicketId = useMemo(
+    () => new Map(autoNextActionJobs.map((job) => [job.ticketId, job])),
+    [autoNextActionJobs],
+  );
 
   const selectedTicket =
     tickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
@@ -473,6 +493,9 @@ export default function ProjectsWorkspace() {
     setSelectedOverviewRequirementId("");
     setOverviewDirty(false);
     setSelectedOverviewRequirementDirty(false);
+    setAutoNextActionJobs([]);
+    setEditingNextActionId("");
+    setNextActionDraft("");
     setShowProjectAskAi(false);
     setProjectAskAiMessages([]);
     setProjectAskAiError("");
@@ -529,6 +552,7 @@ export default function ProjectsWorkspace() {
     setTicketEventSummaries(emptyTicketEventSummaries);
     setTicketEventSummariesError("");
     setAutoPolishJobs([]);
+    setAutoNextActionJobs([]);
     setRequirements([]);
     setShowReleaseModelPicker(false);
     setReleaseModel("");
@@ -537,6 +561,8 @@ export default function ProjectsWorkspace() {
     setShowProjectAskAi(false);
     setProjectAskAiMessages([]);
     setProjectAskAiError("");
+    setEditingNextActionId("");
+    setNextActionDraft("");
     setSelectedTicketDirty(false);
     setSelectedRequirementDirty(false);
     setOverviewDirty(false);
@@ -571,13 +597,19 @@ export default function ProjectsWorkspace() {
         setTicketEventSummariesError((requestError as Error).message);
       }
       try {
-        const autoPolishData = await api<{ jobs: AutoAiPolishJob[] }>(
+        const autoPolishData = await api<{
+          jobs: AutoAiPolishJob[];
+          nextActionJobs?: AutoTicketNextActionJob[];
+        }>(
           `${projectApiPath(folder)}/ticket-event-summaries/status`,
         );
         if (loadProjectRequestId.current !== requestId) {
           return;
         }
         setAutoPolishJobs(activeAutoPolishJobs(autoPolishData.jobs));
+        setAutoNextActionJobs(
+          activeAutoPolishJobs(autoPolishData.nextActionJobs ?? []),
+        );
       } catch (requestError) {
         if (loadProjectRequestId.current !== requestId) {
           return;
@@ -721,7 +753,7 @@ export default function ProjectsWorkspace() {
     setProjectAskAiError("");
   }
 
-  async function askProjectAi(prompt: string) {
+  async function askProjectAi(prompt: string, options: ProjectAskAiOptions) {
     if (!selectedFolder) {
       return;
     }
@@ -739,12 +771,19 @@ export default function ProjectsWorkspace() {
         `${projectApiPath(selectedFolder)}/ask-ai`,
         {
           method: "POST",
-          body: JSON.stringify({ messages: nextMessages }),
+          body: JSON.stringify({
+            messages: nextMessages,
+            deepThinking: options.deepThinking,
+          }),
         },
       );
+      const answer = typeof data?.answer === "string" ? data.answer.trim() : "";
+      if (!answer) {
+        throw new Error("Ask AI returned an empty answer.");
+      }
       setProjectAskAiMessages([
         ...nextMessages,
-        { role: "assistant", content: data.answer },
+        { role: "assistant", content: answer },
       ]);
     } catch (requestError) {
       setProjectAskAiError((requestError as Error).message);
@@ -902,14 +941,20 @@ export default function ProjectsWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!selectedFolder || !hasActiveAutoPolishJobs) {
+    if (
+      !selectedFolder ||
+      (!hasActiveAutoPolishJobs && !hasActiveAutoNextActionJobs)
+    ) {
       return;
     }
     let cancelled = false;
 
     async function refreshAutoPolishStatus() {
       try {
-        const statusData = await api<{ jobs: AutoAiPolishJob[] }>(
+        const statusData = await api<{
+          jobs: AutoAiPolishJob[];
+          nextActionJobs?: AutoTicketNextActionJob[];
+        }>(
           `${projectApiPath(selectedFolder)}/ticket-event-summaries/status`,
         );
         if (cancelled) {
@@ -920,16 +965,40 @@ export default function ProjectsWorkspace() {
           (job) => job.status === "succeeded",
         );
         const failed = statusData.jobs.filter((job) => job.status === "failed");
+        const nextActionJobs = statusData.nextActionJobs ?? [];
+        const nextActionSucceeded = nextActionJobs.some(
+          (job) => job.status === "succeeded",
+        );
+        const nextActionFailed = nextActionJobs.filter(
+          (job) => job.status === "failed",
+        );
+        const activeNextActionJobs = activeAutoPolishJobs(nextActionJobs);
         setAutoPolishJobs(activeAutoPolishJobs(statusData.jobs));
+        setAutoNextActionJobs(activeNextActionJobs);
+        if (
+          editingNextActionId &&
+          activeNextActionJobs.some(
+            (job) =>
+              job.ticketId === editingNextActionId &&
+              isActiveAutoPolishJob(job),
+          )
+        ) {
+          setEditingNextActionId("");
+          setNextActionDraft("");
+        }
 
-        if (failed.length > 0) {
+        if (failed.length > 0 || nextActionFailed.length > 0) {
           setTicketEventSummariesError(
-            failed
-              .map(
+            [
+              ...failed.map(
                 (job) =>
                   `${job.ticketId}: ${job.error || "Automatic AI Polish failed."}`,
-              )
-              .join("\n"),
+              ),
+              ...nextActionFailed.map(
+                (job) =>
+                  `${job.ticketId}: ${job.error || "Automatic AI Next Action failed."}`,
+              ),
+            ].join("\n"),
           );
         }
 
@@ -939,8 +1008,35 @@ export default function ProjectsWorkspace() {
           }>(`${projectApiPath(selectedFolder)}/ticket-event-summaries`);
           if (!cancelled) {
             setTicketEventSummaries(summariesData.summaries);
-            if (failed.length === 0) {
+            if (failed.length === 0 && nextActionFailed.length === 0) {
               setTicketEventSummariesError("");
+            }
+          }
+        }
+        if (nextActionSucceeded) {
+          if (cancelled) {
+            return;
+          }
+          const updatedTickets = ticketsFromNextActionJobs(nextActionJobs);
+          if (updatedTickets.length > 0) {
+            const updatedById = new Map(
+              updatedTickets.map((ticket) => [ticket.id, ticket]),
+            );
+            setTickets((current) =>
+              current.map((ticket) => updatedById.get(ticket.id) ?? ticket),
+            );
+            if (failed.length === 0 && nextActionFailed.length === 0) {
+              setTicketEventSummariesError("");
+            }
+          } else {
+            const ticketsData = await api<{ tickets: Ticket[] }>(
+              `${projectApiPath(selectedFolder)}/tickets`,
+            );
+            if (!cancelled) {
+              setTickets(ticketsData.tickets);
+              if (failed.length === 0 && nextActionFailed.length === 0) {
+                setTicketEventSummariesError("");
+              }
             }
           }
         }
@@ -959,7 +1055,12 @@ export default function ProjectsWorkspace() {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [hasActiveAutoPolishJobs, selectedFolder]);
+  }, [
+    editingNextActionId,
+    hasActiveAutoNextActionJobs,
+    hasActiveAutoPolishJobs,
+    selectedFolder,
+  ]);
 
   async function createTicket(draft: TicketDraft) {
     if (!selectedFolder) {
@@ -991,7 +1092,10 @@ export default function ProjectsWorkspace() {
   ) {
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket }>(
+      const data = await api<{
+        ticket: Ticket;
+        autoNextActionCanceled?: boolean;
+      }>(
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}`,
         {
           method: "PUT",
@@ -1003,6 +1107,11 @@ export default function ProjectsWorkspace() {
           ticket.id === ticketId ? data.ticket : ticket,
         ),
       );
+      if (data.autoNextActionCanceled) {
+        setAutoNextActionJobs((current) =>
+          current.filter((job) => job.ticketId !== ticketId),
+        );
+      }
       refreshDashboardQuietly();
       if (options.showSuccessToast ?? true) {
         showToast("Ticket changes saved.");
@@ -1013,6 +1122,11 @@ export default function ProjectsWorkspace() {
   }
 
   function startNextActionEdit(ticket: Ticket) {
+    const job = autoNextActionJobByTicketId.get(ticket.id);
+    if (job && isActiveAutoPolishJob(job)) {
+      showToast("AI Next Action is scheduled. You can edit after it finishes.");
+      return;
+    }
     setEditingNextActionId(ticket.id);
     setNextActionDraft(ticket.next_action);
   }
@@ -1026,6 +1140,25 @@ export default function ProjectsWorkspace() {
       },
       { showSuccessToast: false },
     );
+    setEditingNextActionId("");
+    setNextActionDraft("");
+  }
+
+  function applyAutoNextActionJob(job: AutoTicketNextActionJob) {
+    setAutoNextActionJobs((current) => upsertAutoPolishJob(current, job));
+    closeNextActionEditorIfLocked([job]);
+  }
+
+  function closeNextActionEditorIfLocked(jobs: AutoTicketNextActionJob[]) {
+    if (
+      !editingNextActionId ||
+      !jobs.some(
+        (job) =>
+          job.ticketId === editingNextActionId && isActiveAutoPolishJob(job),
+      )
+    ) {
+      return;
+    }
     setEditingNextActionId("");
     setNextActionDraft("");
   }
@@ -1072,7 +1205,11 @@ export default function ProjectsWorkspace() {
   async function addEvent(ticketId: string, draft: EventDraft) {
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket; autoPolish?: AutoAiPolishJob }>(
+      const data = await api<{
+        ticket: Ticket;
+        autoPolish?: AutoAiPolishJob;
+        autoNextAction?: AutoTicketNextActionJob;
+      }>(
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events`,
         {
           method: "POST",
@@ -1089,7 +1226,17 @@ export default function ProjectsWorkspace() {
         setAutoPolishJobs((current) =>
           upsertAutoPolishJob(current, autoPolish),
         );
+      }
+      const autoNextAction = data.autoNextAction;
+      if (autoNextAction) {
+        applyAutoNextActionJob(autoNextAction);
+      }
+      if (autoPolish && autoNextAction) {
+        showToast(`AI Polish and Next Action scheduled for ${ticketId}.`);
+      } else if (autoPolish) {
         showToast(`AI Polish scheduled for ${ticketId}.`);
+      } else if (autoNextAction) {
+        showToast(`AI Next Action scheduled for ${ticketId}.`);
       }
       refreshDashboardQuietly();
     } finally {
@@ -1104,7 +1251,10 @@ export default function ProjectsWorkspace() {
   ) {
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket }>(
+      const data = await api<{
+        ticket: Ticket;
+        autoNextAction?: AutoTicketNextActionJob;
+      }>(
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events/${index}`,
         {
           method: "PUT",
@@ -1116,6 +1266,11 @@ export default function ProjectsWorkspace() {
           ticket.id === ticketId ? data.ticket : ticket,
         ),
       );
+      const autoNextAction = data.autoNextAction;
+      if (autoNextAction) {
+        applyAutoNextActionJob(autoNextAction);
+        showToast(`AI Next Action scheduled for ${ticketId}.`);
+      }
       refreshDashboardQuietly();
     } finally {
       setSaving(false);
@@ -1125,7 +1280,10 @@ export default function ProjectsWorkspace() {
   async function deleteEvent(ticketId: string, index: number) {
     setSaving(true);
     try {
-      const data = await api<{ ticket: Ticket }>(
+      const data = await api<{
+        ticket: Ticket;
+        autoNextAction?: AutoTicketNextActionJob;
+      }>(
         `${projectApiPath(selectedFolder)}/tickets/${ticketId}/events/${index}`,
         { method: "DELETE" },
       );
@@ -1134,6 +1292,11 @@ export default function ProjectsWorkspace() {
           ticket.id === ticketId ? data.ticket : ticket,
         ),
       );
+      const autoNextAction = data.autoNextAction;
+      if (autoNextAction) {
+        applyAutoNextActionJob(autoNextAction);
+        showToast(`AI Next Action scheduled for ${ticketId}.`);
+      }
       refreshDashboardQuietly();
     } finally {
       setSaving(false);
@@ -1952,6 +2115,12 @@ export default function ProjectsWorkspace() {
                         Auto AI Polish: {autoPolishStatusText(autoPolishJobs)}
                       </div>
                     ) : null}
+                    {autoNextActionJobs.length > 0 ? (
+                      <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        Auto AI Next Action:{" "}
+                        {autoPolishStatusText(autoNextActionJobs)}
+                      </div>
+                    ) : null}
                     {ticketEventSummariesError ? (
                       <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                         {ticketEventSummariesError}
@@ -1972,6 +2141,9 @@ export default function ProjectsWorkspace() {
                             summaryTicket={summaryTicket}
                             active={ticket.id === selectedTicketId}
                             polishing={polishingTicketId === ticket.id}
+                            nextActionJob={autoNextActionJobByTicketId.get(
+                              ticket.id,
+                            )}
                             isEditingNextAction={
                               ticket.id === editingNextActionId
                             }
@@ -1989,6 +2161,9 @@ export default function ProjectsWorkspace() {
                             key={ticket.id}
                             ticket={ticket}
                             active={ticket.id === selectedTicketId}
+                            nextActionJob={autoNextActionJobByTicketId.get(
+                              ticket.id,
+                            )}
                             onClick={() => selectTicket(ticket.id)}
                             isEditingNextAction={
                               ticket.id === editingNextActionId

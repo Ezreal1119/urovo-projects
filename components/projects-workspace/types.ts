@@ -180,6 +180,10 @@ export type ProjectAskAiResponse = {
   answer: string;
 };
 
+export type ProjectAskAiOptions = {
+  deepThinking: boolean;
+};
+
 export type AiAnalysisEvent = {
   time: string;
   summary: string;

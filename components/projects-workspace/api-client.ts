@@ -14,9 +14,15 @@ export async function api<T = unknown>(url: string, init?: RequestInit): Promise
     ...init,
     headers,
   });
-  const data = await response.json();
+  const raw = await response.text();
+  const data = parseApiResponseBody(raw, response.ok, response.status);
   if (!response.ok) {
-    throw new ApiError(data.error || "Request failed.", response.status, data);
+    const errorData = isRecord(data) ? data : { error: data || raw };
+    throw new ApiError(
+      cleanErrorMessage(errorData.error) || "Request failed.",
+      response.status,
+      errorData,
+    );
   }
   return data as T;
 }
@@ -30,4 +36,28 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+function parseApiResponseBody(raw: string, ok: boolean, status: number) {
+  if (!raw.trim()) {
+    if (ok) {
+      return null;
+    }
+    return { error: `Request failed with status ${status} and an empty response.` };
+  }
+
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    const message = ok ? "Request returned invalid JSON." : raw;
+    throw new ApiError(message, status, { error: message });
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function cleanErrorMessage(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }

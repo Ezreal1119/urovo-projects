@@ -67,7 +67,7 @@ async function requestDeepSeekAnalysis(prompt: string, context: unknown) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "deepseek-v4-pro",
+      model: "deepseek-v4-flash",
       temperature: 0.1,
       messages: [
         { role: "system", content: prompt },

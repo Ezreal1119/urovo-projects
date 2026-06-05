@@ -24,6 +24,8 @@ export type ProjectAiChatMessage = {
   content: string;
 };
 
+export type ProjectAiModel = "deepseek-v4-flash" | "deepseek-v4-pro";
+
 type ProjectAiContext = {
   project: ReturnType<typeof compactProject>;
   overview: ReturnType<typeof compactOverview>;
@@ -58,12 +60,22 @@ export function validateProjectAiMessages(input: unknown): ProjectAiChatMessage[
   return normalized;
 }
 
+export function projectAiModelFromRequest(input: unknown): ProjectAiModel {
+  if (!input || typeof input !== "object") {
+    return "deepseek-v4-flash";
+  }
+  return (input as { deepThinking?: unknown }).deepThinking === true
+    ? "deepseek-v4-pro"
+    : "deepseek-v4-flash";
+}
+
 export async function askProjectAi(
   key: string,
   messages: ProjectAiChatMessage[],
+  model: ProjectAiModel = "deepseek-v4-flash",
 ) {
   const context = await buildProjectAiContext(key);
-  return requestDeepSeekProjectAnswer(context, messages);
+  return requestDeepSeekProjectAnswer(context, messages, model);
 }
 
 async function buildProjectAiContext(key: string): Promise<ProjectAiContext> {
@@ -88,6 +100,7 @@ async function buildProjectAiContext(key: string): Promise<ProjectAiContext> {
 async function requestDeepSeekProjectAnswer(
   context: ProjectAiContext,
   messages: ProjectAiChatMessage[],
+  model: ProjectAiModel,
 ) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
@@ -101,7 +114,7 @@ async function requestDeepSeekProjectAnswer(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "deepseek-v4-flash",
+      model,
       temperature: 0.1,
       messages: [
         { role: "system", content: PROJECT_ASK_AI_PROMPT },

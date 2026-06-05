@@ -9,6 +9,11 @@ import type {
 import { eventRoleLabels, eventRoleStyles } from "../labels";
 import { formatDateOnly, formatDateTimeFull } from "../formatters";
 import { Overlay, PriorityBadge, StatusBadge } from "../ui";
+import {
+  isNextActionLocked,
+  NextActionCountdown,
+  type NextActionJobInfo,
+} from "./NextActionCountdown";
 
 type DisplaySummary = {
   summary: TicketEventSummary;
@@ -38,6 +43,7 @@ export function TicketEventSummaryCard({
   summaryTicket,
   active = false,
   polishing = false,
+  nextActionJob,
   isEditingNextAction = false,
   nextActionDraft = "",
   onClick,
@@ -51,6 +57,7 @@ export function TicketEventSummaryCard({
   summaryTicket: TicketEventSummaryTicket | undefined;
   active?: boolean;
   polishing?: boolean;
+  nextActionJob?: NextActionJobInfo;
   isEditingNextAction?: boolean;
   nextActionDraft?: string;
   onClick?: () => void;
@@ -62,6 +69,7 @@ export function TicketEventSummaryCard({
 }) {
   const summaries = displaySummaries(ticket, summaryTicket);
   const [showSummaries, setShowSummaries] = useState(false);
+  const nextActionLocked = isNextActionLocked(nextActionJob);
   if (summaries.length === 0 && !onPolish && !showEmptySummaries) {
     return null;
   }
@@ -131,12 +139,17 @@ export function TicketEventSummaryCard({
         {ticket.next_action || onStartNextActionEdit ? (
           <div
             className={`mt-4 rounded-lg border border-slate-200 bg-[linear-gradient(135deg,#f8fafc,#ffffff)] p-3 shadow-inner shadow-slate-100 ${
-              onStartNextActionEdit && !isEditingNextAction
+              nextActionLocked
+                ? "cursor-not-allowed border-emerald-100 bg-[linear-gradient(135deg,#ecfdf5,#f8fafc)]"
+                : onStartNextActionEdit && !isEditingNextAction
                 ? "cursor-pointer hover:border-cyan-200 hover:bg-cyan-50"
                 : ""
             }`}
             onClick={(event) => {
               event.stopPropagation();
+              if (nextActionLocked) {
+                return;
+              }
               if (!onStartNextActionEdit || !onSaveNextAction) {
                 return;
               }
@@ -150,8 +163,11 @@ export function TicketEventSummaryCard({
               }
             }}
           >
-            <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Next action
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                Next action
+              </div>
+              <NextActionCountdown job={nextActionJob} />
             </div>
             {isEditingNextAction && onNextActionDraftChange ? (
               <div className="mt-2">
@@ -161,6 +177,7 @@ export function TicketEventSummaryCard({
                     onNextActionDraftChange(event.target.value)
                   }
                   onClick={(event) => event.stopPropagation()}
+                  disabled={nextActionLocked}
                   className="form-input min-h-20 resize-y"
                   placeholder="Owner, expected response, or next technical step"
                 />

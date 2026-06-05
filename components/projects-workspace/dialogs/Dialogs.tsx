@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { FormEvent, ReactNode } from "react";
-import type { AiAnalysisResult, ProjectAskAiMessage, ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
+import type { AiAnalysisResult, ProjectAskAiMessage, ProjectAskAiOptions, ProjectJsonDraft, ReportGenerateDraft, ReportGenerateResponse, RequirementDeleteBlocker, TicketDeleteBlocker } from "../types";
 import { emptyProjectJsonDraft, projectJsonDraftsEqual } from "../drafts";
 import { copyTextToClipboard, downloadSummaryMarkdownAsPng, projectSummaryPngFilename } from "../summary";
 import { todayDate } from "../formatters";
@@ -216,9 +216,11 @@ export function ProjectAskAiDialog({
   loading: boolean;
   error: string;
   onClose: () => void;
-  onAsk: (prompt: string) => Promise<void>;
+  onAsk: (prompt: string, options: ProjectAskAiOptions) => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
+  const [deepThinking, setDeepThinking] = useState(false);
+  const [composing, setComposing] = useState(false);
   const [emptyError, setEmptyError] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [copyBlockedIndex, setCopyBlockedIndex] = useState<number | null>(null);
@@ -233,7 +235,7 @@ export function ProjectAskAiDialog({
     setEmptyError("");
     setCopiedIndex(null);
     setCopyBlockedIndex(null);
-    await onAsk(prompt);
+    await onAsk(prompt, { deepThinking });
     setDraft("");
   }
 
@@ -247,6 +249,21 @@ export function ProjectAskAiDialog({
     }
     setCopiedIndex(index);
     window.setTimeout(() => setCopiedIndex(null), 1800);
+  }
+
+  function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    const nativeEvent = event.nativeEvent as {
+      isComposing?: boolean;
+      keyCode?: number;
+    };
+    if (composing || nativeEvent.isComposing || nativeEvent.keyCode === 229) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
   }
 
   return (
@@ -377,20 +394,30 @@ export function ProjectAskAiDialog({
                 setDraft(event.target.value);
                 setEmptyError("");
               }}
+              onCompositionStart={() => setComposing(true)}
+              onCompositionEnd={() => setComposing(false)}
+              onKeyDown={handleDraftKeyDown}
               disabled={loading}
               className="min-h-24 w-full resize-none rounded-xl border border-transparent bg-white px-4 py-3 text-sm leading-6 text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
               placeholder="Ask about this project"
             />
           </div>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-h-5 text-sm font-medium" aria-live="polite">
-              {emptyError ? (
-                <span className="text-amber-700">{emptyError}</span>
-              ) : error ? (
-                <span className="text-red-700">{error}</span>
-              ) : (
-                <span className="text-slate-400"> </span>
-              )}
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+              <DeepThinkingSwitch
+                checked={deepThinking}
+                disabled={loading}
+                onChange={setDeepThinking}
+              />
+              <div className="min-h-5 text-sm font-medium" aria-live="polite">
+                {emptyError ? (
+                  <span className="text-amber-700">{emptyError}</span>
+                ) : error ? (
+                  <span className="text-red-700">{error}</span>
+                ) : (
+                  <span className="text-slate-400"> </span>
+                )}
+              </div>
             </div>
             <button
               type="submit"
@@ -403,6 +430,49 @@ export function ProjectAskAiDialog({
         </form>
       </div>
     </Overlay>
+  );
+}
+
+function DeepThinkingSwitch({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={`group inline-flex w-fit items-center gap-3 rounded-2xl border px-3 py-2 shadow-sm transition ${
+        checked
+          ? "border-cyan-200 bg-[linear-gradient(135deg,#ecfeff,#ecfdf5)] shadow-cyan-100"
+          : "border-slate-200 bg-white shadow-slate-200/70"
+      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:-translate-y-0.5 hover:shadow-md"}`}
+    >
+      <span className="relative inline-flex h-7 w-12 shrink-0 items-center">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.checked)}
+          className="peer sr-only"
+          aria-label="Deep thinking"
+        />
+        <span className="absolute inset-0 rounded-full bg-slate-200 transition peer-checked:bg-slate-950 peer-focus-visible:ring-4 peer-focus-visible:ring-cyan-100" />
+        <span className="absolute left-1 grid h-5 w-5 place-items-center rounded-full bg-white text-[10px] font-bold text-slate-500 shadow-sm transition peer-checked:translate-x-5 peer-checked:text-cyan-700">
+          {checked ? "Pro" : "F"}
+        </span>
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-slate-900">
+          Deep thinking
+        </span>
+        <span className="block text-xs font-medium text-slate-500">
+          {checked ? "DeepSeek V4 Pro" : "DeepSeek V4 Flash"}
+        </span>
+      </span>
+    </label>
   );
 }
 

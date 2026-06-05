@@ -1,5 +1,6 @@
 import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import { scheduleAutoTicketAiPolish } from "@/lib/auto-ai-polish-queue";
+import { scheduleAutoTicketNextAction } from "@/lib/auto-ticket-next-action-queue";
 import {
   createEventPayload,
   projectKeyFromSegments,
@@ -27,9 +28,13 @@ export async function POST(request: Request, context: Context) {
     }
 
     const event = createEventPayload(input);
+    const existingTicket = tickets[ticketIndex];
+    const shouldMarkPendingInternal =
+      event.role === "customer" && existingTicket.status !== "pending_internal";
     const ticket = {
-      ...tickets[ticketIndex],
-      events: [...tickets[ticketIndex].events, event].sort(sortEvents),
+      ...existingTicket,
+      status: event.role === "customer" ? "pending_internal" : existingTicket.status,
+      events: [...existingTicket.events, event].sort(sortEvents),
       updated_at: beijingNowIsoString(),
     };
     const nextTickets = tickets.toSpliced(ticketIndex, 1, ticket).sort(sortTickets);
@@ -41,9 +46,21 @@ export async function POST(request: Request, context: Context) {
         action: "ticket_event_added",
         content: event.content,
       },
+      ...(shouldMarkPendingInternal
+        ? [
+            {
+              entityType: "ticket" as const,
+              ...visibleEntityId(ticket),
+              action: "ticket_updated" as const,
+              content:
+                "Status changed to pending_internal because a customer event was added.",
+            },
+          ]
+        : []),
     ]);
     const autoPolish = scheduleAutoTicketAiPolish(key, ticket.id);
-    return Response.json({ event, ticket, autoPolish }, { status: 201 });
+    const autoNextAction = scheduleAutoTicketNextAction(key, ticket.id);
+    return Response.json({ event, ticket, autoPolish, autoNextAction }, { status: 201 });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }

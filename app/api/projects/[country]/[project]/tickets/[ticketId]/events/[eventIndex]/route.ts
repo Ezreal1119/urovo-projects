@@ -1,4 +1,5 @@
 import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
+import { scheduleAutoTicketNextAction } from "@/lib/auto-ticket-next-action-queue";
 import {
   projectKeyFromSegments,
   readTickets,
@@ -47,7 +48,8 @@ export async function PUT(request: Request, context: Context) {
         content: event.content,
       },
     ]);
-    return Response.json({ event, ticket });
+    const autoNextAction = scheduleAutoTicketNextAction(key, ticket.id);
+    return Response.json({ event, ticket, autoNextAction });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
@@ -85,7 +87,8 @@ export async function DELETE(_request: Request, context: Context) {
         content: deletedEvent.content,
       },
     ]);
-    return Response.json({ ticket });
+    const autoNextAction = scheduleAutoTicketNextAction(key, ticket.id);
+    return Response.json({ ticket, autoNextAction });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }

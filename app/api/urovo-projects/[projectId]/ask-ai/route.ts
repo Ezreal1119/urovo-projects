@@ -4,11 +4,11 @@ import {
   ProjectAiInputError,
   validateProjectAiMessages,
 } from "@/lib/project-ai";
-import { projectKeyFromSegments } from "@/lib/projects";
+import { listProjects } from "@/lib/projects";
 
 export const runtime = "nodejs";
 
-type Context = { params: Promise<{ country: string; project: string }> };
+type Context = { params: Promise<{ projectId: string }> };
 
 export function OPTIONS(request: Request) {
   return new Response(null, {
@@ -19,13 +19,19 @@ export function OPTIONS(request: Request) {
 
 export async function POST(request: Request, context: Context) {
   try {
-    const { country, project } = await context.params;
-    const key = projectKeyFromSegments([country, project]);
+    const { projectId } = await context.params;
+    const project = (await listProjects()).find(
+      (item) => item.project.project_id === projectId,
+    );
+    if (!project) {
+      return askAiJson(request, { error: "Project not found." }, 404);
+    }
+
     const input = await parseJsonRequest(request);
     const messages = validateProjectAiMessages(input);
     const model = projectAiModelFromRequest(input);
     return askAiJson(request, {
-      answer: await askProjectAi(key, messages, model),
+      answer: await askProjectAi(project.folder, messages, model),
     });
   } catch (error) {
     if (error instanceof ProjectAiInputError) {

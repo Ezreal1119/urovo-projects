@@ -1,4 +1,5 @@
 import { cloudinaryAssetPrefix, deleteAssetsByPrefix } from "@/lib/cloudinary-assets";
+import { cancelAutoTicketNextAction } from "@/lib/auto-ticket-next-action-queue";
 import { appendChangeLogs, visibleEntityId } from "@/lib/change-log";
 import {
   projectKeyFromSegments,
@@ -25,7 +26,11 @@ export async function PUT(request: Request, context: Context) {
       return Response.json({ error: "Ticket not found." }, { status: 404 });
     }
 
-    const updated = updateTicketPayload(tickets[index], input);
+    const existing = tickets[index];
+    const shouldCancelAutoNextAction =
+      input.next_action !== undefined &&
+      cleanText(input.next_action) !== existing.next_action;
+    const updated = updateTicketPayload(existing, input);
     const nextTickets = tickets.toSpliced(index, 1, updated).sort(sortTickets);
     await writeTickets(key, nextTickets);
     await appendChangeLogs(key, [
@@ -36,7 +41,10 @@ export async function PUT(request: Request, context: Context) {
         content: ticketContent(updated),
       },
     ]);
-    return Response.json({ ticket: updated });
+    const autoNextActionCanceled = shouldCancelAutoNextAction
+      ? cancelAutoTicketNextAction(key, updated.id)
+      : false;
+    return Response.json({ ticket: updated, autoNextActionCanceled });
   } catch (error) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
@@ -93,4 +101,8 @@ export async function DELETE(_request: Request, context: Context) {
 
 function ticketContent(ticket: { title: string; summary: string; next_action: string }) {
   return [ticket.title, ticket.summary, ticket.next_action].filter(Boolean).join(" ");
+}
+
+function cleanText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }

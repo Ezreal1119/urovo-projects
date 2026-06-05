@@ -9,10 +9,16 @@ import { formatDateOnly, formatDateTimeFull } from "../formatters";
 import { AssetManager } from "../assets/AssetManager";
 import { ReferenceManager } from "../references/ReferenceManager";
 import { Field, Overlay, PriorityBadge, StatusBadge } from "../ui";
+import {
+  isNextActionLocked,
+  NextActionCountdown,
+  type NextActionJobInfo,
+} from "./NextActionCountdown";
 
 export function TicketCard({
   ticket,
   active,
+  nextActionJob,
   onClick,
   isEditingNextAction,
   nextActionDraft,
@@ -22,6 +28,7 @@ export function TicketCard({
 }: {
   ticket: Ticket;
   active: boolean;
+  nextActionJob?: NextActionJobInfo;
   onClick: () => void;
   isEditingNextAction: boolean;
   nextActionDraft: string;
@@ -29,6 +36,8 @@ export function TicketCard({
   onNextActionDraftChange: (value: string) => void;
   onSaveNextAction: () => void;
 }) {
+  const nextActionLocked = isNextActionLocked(nextActionJob);
+
   return (
     <div
       onClick={onClick}
@@ -54,9 +63,18 @@ export function TicketCard({
         {ticket.summary || "No summary."}
       </p>
       <div
-        className={`mt-4 rounded-lg bg-slate-50 p-3 ${isEditingNextAction ? "" : "cursor-pointer hover:bg-slate-100"}`}
+        className={`mt-4 rounded-lg bg-slate-50 p-3 ${
+          nextActionLocked
+            ? "cursor-not-allowed border border-emerald-100 bg-emerald-50/60"
+            : isEditingNextAction
+              ? ""
+              : "cursor-pointer hover:bg-slate-100"
+        }`}
         onClick={(event) => {
           event.stopPropagation();
+          if (nextActionLocked) {
+            return;
+          }
           if (isEditingNextAction) {
             const target = event.target as HTMLElement;
             if (target.tagName !== "TEXTAREA") {
@@ -71,12 +89,14 @@ export function TicketCard({
           <div className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
             Next action
           </div>
+          <NextActionCountdown job={nextActionJob} />
         </div>
         {isEditingNextAction ? (
           <div className="mt-2">
             <textarea
               value={nextActionDraft}
               onChange={(event) => onNextActionDraftChange(event.target.value)}
+              disabled={nextActionLocked}
               className="form-input min-h-20 resize-y"
               placeholder="Owner, expected response, or next technical step"
             />
