@@ -480,7 +480,13 @@ type MarkdownBlock =
   | { type: "heading"; key: string; level: number; text: string }
   | { type: "paragraph"; key: string; text: string }
   | { type: "list"; key: string; ordered: boolean; items: string[] }
-  | { type: "code"; key: string; code: string };
+  | { type: "code"; key: string; code: string }
+  | {
+      type: "table";
+      key: string;
+      headers: string[];
+      rows: string[][];
+    };
 
 function MarkdownContent({ markdown }: { markdown: string }) {
   const blocks = parseMarkdownBlocks(markdown);
@@ -559,6 +565,18 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       continue;
     }
 
+    if (isMarkdownTableStart(lines, index)) {
+      const table = parseMarkdownTable(lines, index);
+      blocks.push({
+        type: "table",
+        key: `table-${blocks.length}`,
+        headers: table.headers,
+        rows: table.rows,
+      });
+      index = table.nextIndex;
+      continue;
+    }
+
     const paragraphLines: string[] = [];
     while (index < lines.length) {
       const current = lines[index] ?? "";
@@ -567,7 +585,8 @@ function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         !currentTrimmed ||
         currentTrimmed.startsWith("```") ||
         currentTrimmed.match(/^(#{1,6})\s+(.+)$/) ||
-        listLineKind(currentTrimmed)
+        listLineKind(currentTrimmed) ||
+        isMarkdownTableStart(lines, index)
       ) {
         break;
       }
@@ -626,9 +645,98 @@ function renderMarkdownBlock(block: MarkdownBlock) {
     );
   }
 
+  if (block.type === "table") {
+    return (
+      <div
+        key={block.key}
+        className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-200/70"
+      >
+        <table className="min-w-full border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
+            <tr>
+              {block.headers.map((header, index) => (
+                <th
+                  key={`${block.key}-header-${index}`}
+                  className="border-b border-slate-200 px-3 py-2 align-top"
+                >
+                  {renderInlineMarkdown(header, `${block.key}-header-${index}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {block.rows.map((row, rowIndex) => (
+              <tr key={`${block.key}-row-${rowIndex}`}>
+                {block.headers.map((_, cellIndex) => (
+                  <td
+                    key={`${block.key}-cell-${rowIndex}-${cellIndex}`}
+                    className="px-3 py-2 align-top text-slate-700"
+                  >
+                    {renderInlineMarkdown(
+                      row[cellIndex] ?? "",
+                      `${block.key}-cell-${rowIndex}-${cellIndex}`,
+                    )}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <p key={block.key}>{renderInlineMarkdown(block.text, block.key)}</p>
   );
+}
+
+function isMarkdownTableStart(lines: string[], index: number) {
+  const header = lines[index]?.trim() ?? "";
+  const separator = lines[index + 1]?.trim() ?? "";
+  return (
+    isPipeTableRow(header) &&
+    isPipeTableSeparator(separator) &&
+    splitTableRow(header).length >= 2
+  );
+}
+
+function parseMarkdownTable(lines: string[], index: number) {
+  const headers = splitTableRow(lines[index] ?? "");
+  const rows: string[][] = [];
+  let nextIndex = index + 2;
+
+  while (nextIndex < lines.length && isPipeTableRow(lines[nextIndex] ?? "")) {
+    const row = splitTableRow(lines[nextIndex] ?? "");
+    if (row.length === 0) {
+      break;
+    }
+    rows.push(row);
+    nextIndex += 1;
+  }
+
+  return { headers, rows, nextIndex };
+}
+
+function isPipeTableRow(line: string) {
+  const trimmed = line.trim();
+  return trimmed.includes("|") && splitTableRow(trimmed).length >= 2;
+}
+
+function isPipeTableSeparator(line: string) {
+  const cells = splitTableRow(line);
+  return (
+    cells.length >= 2 &&
+    cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")))
+  );
+}
+
+function splitTableRow(line: string) {
+  const trimmed = line.trim();
+  const withoutOuterPipes = trimmed
+    .replace(/^\|/, "")
+    .replace(/\|$/, "");
+  return withoutOuterPipes.split("|").map((cell) => cell.trim());
 }
 
 function listLineKind(line: string) {
